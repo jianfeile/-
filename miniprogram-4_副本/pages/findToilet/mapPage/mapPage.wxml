@@ -1,0 +1,15 @@
+<map id="myMap" style="width: 100%; height: 100%;" 
+    latitude="{{latitude}}" 
+    longitude="{{longitude}}" 
+    scale="{{scale}}" 
+    show-location="true" 
+    enable-zoom="true" 
+    enable-scroll="true" 
+    show-compass="true" 
+    show-scale="true" 
+    bindregionchange="onRegionChange" 
+    bindmarkertap="onMarkerTap" 
+    controls="{{controls}}"
+    bindcontroltap="onControlTap">
+</map>
+<button class="position-button" bindtap="moveToLocation">定位到当前位置</button>

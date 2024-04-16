@@ -1,0 +1,7 @@
+<!--index.wxml-->
+<view class="container">
+  <view class="title">欢迎来到小河马</view>
+  <view class="subtitle">帮助你快速找到附近的河马</view>
+  <button class="search-button" bindtap="navigateToSearch">寻找河马</button>
+  <view class="info-text">点击按钮开始寻找附近的厕所</view>
+</view>

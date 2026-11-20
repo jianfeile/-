@@ -1,0 +1,5 @@
+# the readable master content and the unlock codes never go into the repository
+content/
+secrets/
+node_modules/
+*.log

@@ -1,0 +1,728 @@
+/* 公民考试中文题库 — single-page app, no dependencies.
+   Data: data/free.json (free sample, plain) and data/bank.json (full bank, AES-GCM, opened with an unlock code).
+   In every stored question the correct option is index 0; options are shuffled when shown. */
+(function () {
+  'use strict';
+
+  var CFG = window.CIVIQUE_CONFIG || {};
+  var LS = 'civique.v1';
+  var ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  var SET = 10;                       // questions per practice set
+  var EXAM = { n: 40, min: 45, pass: 32 };
+  var MINI = { n: 10, min: 12, pass: 8 };
+  // k / s: knowledge and situational questions per theme in the real exam; mk / ms: in the short trial exam
+  var THEMES = [
+    { id: 'principes', zh: '共和国的原则与价值', fr: 'Principes et valeurs de la République', k: 5, s: 6, mk: 2, ms: 1 },
+    { id: 'institutions', zh: '制度与政治体系', fr: 'Système institutionnel et politique', k: 6, s: 0, mk: 2, ms: 0 },
+    { id: 'droits', zh: '权利与义务', fr: 'Droits et devoirs', k: 5, s: 6, mk: 1, ms: 1 },
+    { id: 'histoire', zh: '历史、地理与文化', fr: 'Histoire, géographie et culture', k: 8, s: 0, mk: 2, ms: 0 },
+    { id: 'societe', zh: '在法国社会生活', fr: 'Vivre dans la société française', k: 4, s: 0, mk: 1, ms: 0 }
+  ];
+  var LEVELS = {
+    csp: { zh: '多年居留卡', fr: 'carte de séjour pluriannuelle' },
+    cr: { zh: '十年居留卡', fr: 'carte de résident' }
+  };
+  var LETTERS = ['A', 'B', 'C', 'D'];
+  var app = document.getElementById('app');
+
+  // ---------------------------------------------------------------- storage
+  var mem = {};
+  function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return mem[k] || null; } }
+  function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { mem[k] = v; } }
+  function fresh() { return { target: '', zhOn: false, stats: {}, exams: [], sess: null, exam: null, unlock: null, marks: {} }; }
+  var S = fresh();
+  (function () {
+    try { var o = JSON.parse(lsGet(LS) || 'null'); if (o && typeof o === 'object') for (var k in o) S[k] = o[k]; } catch (e) { /* start clean */ }
+    if (!LEVELS[S.target]) S.target = '';
+    if (!S.stats || typeof S.stats !== 'object') S.stats = {};
+    if (!Array.isArray(S.exams)) S.exams = [];
+    if (!S.marks) S.marks = {};
+  })();
+  function save() { lsSet(LS, JSON.stringify(S)); }
+
+  var ui = { modal: null, open: {}, msg: null, busy: false, resultIdx: 0, netFail: false, revoked: false };
+  var DB = { free: null, bank: null, qs: [], src: [], byId: {} };
+
+  // ---------------------------------------------------------------- helpers
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function shuffle(a) {
+    a = a.slice();
+    for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  function theme(id) { for (var i = 0; i < THEMES.length; i++) if (THEMES[i].id === id) return THEMES[i]; return THEMES[0]; }
+  function unlocked() { return !!DB.bank; }
+  function pool() { return DB.qs.filter(function (q) { return q.l.indexOf(S.target) >= 0; }); }
+  function mmss(sec) { sec = Math.max(0, Math.round(sec)); var m = Math.floor(sec / 60), s = sec % 60; return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s; }
+  function ping(name) {
+    if (!CFG.beacon || S.marks[name]) return;
+    S.marks[name] = 1; save();
+    try { new Image().src = CFG.beacon + encodeURIComponent(name); } catch (e) { /* counting is optional */ }
+  }
+  function dateZh(ts) { var d = new Date(ts); return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes(); }
+
+  // per-question record: [times seen, times right, last answer right (1/0), right answers still needed to leave the mistakes list, time]
+  function record(id, ok) {
+    var s = S.stats[id] || [0, 0, 0, 0, 0];
+    s[0]++;
+    if (ok) { s[1]++; s[2] = 1; if (s[3] > 0) s[3]--; } else { s[2] = 0; s[3] = 2; }
+    s[4] = Date.now();
+    S.stats[id] = s;
+  }
+  function mastered(id) { var s = S.stats[id]; return !!(s && s[2] === 1); }
+  function inMistakes(id) { var s = S.stats[id]; return !!(s && s[3] > 0); }
+  function answeredCount() { var n = 0; for (var k in S.stats) n++; return n; }
+
+  function counts(tid) {
+    var m = DB.free.meta.counts[S.target][tid];
+    var mine = pool().filter(function (q) { return q.t === tid; });
+    return {
+      total: m.c + m.s, know: m.c, situ: m.s,
+      have: mine.length,
+      done: mine.filter(function (q) { return mastered(q.id); }).length,
+      todo: mine.filter(function (q) { return !mastered(q.id); }).length
+    };
+  }
+  function totals() {
+    var t = { total: 0, have: 0, done: 0, know: 0, situ: 0 };
+    THEMES.forEach(function (th) { var c = counts(th.id); t.total += c.total; t.have += c.have; t.done += c.done; t.know += c.know; t.situ += c.situ; });
+    return t;
+  }
+  function mistakes() { return pool().filter(function (q) { return inMistakes(q.id); }); }
+
+  // ---------------------------------------------------------------- data + unlock
+  function getJson(url) {
+    return fetch(url).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); });
+  }
+  function useQuestions() {
+    var d = DB.bank || DB.free;
+    DB.qs = d.qs; DB.src = d.src || []; DB.byId = {};
+    DB.qs.forEach(function (q) { DB.byId[q.id] = q; });
+  }
+  function loadFree() {
+    var p = window.CIVIQUE_FREE ? Promise.resolve(window.CIVIQUE_FREE) : getJson('data/free.json');
+    return p.then(function (d) { DB.free = d; useQuestions(); });
+  }
+  var bankFile = null;
+  function loadBankFile() {
+    if (bankFile) return Promise.resolve(bankFile);
+    var p = window.CIVIQUE_BANK ? Promise.resolve(window.CIVIQUE_BANK) : getJson('data/bank.json');
+    return p.then(function (d) { bankFile = d; return d; });
+  }
+  function b64d(s) { var bin = atob(s), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+  function b64e(u) { var s = ''; for (var i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); return btoa(s); }
+  function toHex(u) { var s = ''; for (var i = 0; i < u.length; i++) s += (u[i] < 16 ? '0' : '') + u[i].toString(16); return s; }
+  function normCode(raw) {
+    var c = String(raw || '').toUpperCase().split('').filter(function (ch) { return ALPHA.indexOf(ch) >= 0; }).join('');
+    return c.length === 12 ? c : null;
+  }
+  function fmtCode(c) { return c.slice(0, 4) + '-' + c.slice(4, 8) + '-' + c.slice(8, 12); }
+  var subtle = window.crypto && window.crypto.subtle;
+
+  function aesOpen(keyBytes, iv, data) {
+    return subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']).then(function (key) {
+      return subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, data);
+    }).then(function (buf) { return new Uint8Array(buf); });
+  }
+  function openBank(bank, K) {
+    return aesOpen(K, b64d(bank.iv), b64d(bank.ct)).then(function (plain) {
+      var data = JSON.parse(new TextDecoder('utf-8').decode(plain));
+      DB.bank = data; useQuestions();
+    });
+  }
+  function keyFromCode(bank, code) {
+    return subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveBits']).then(function (km) {
+      return subtle.deriveBits({ name: 'PBKDF2', salt: b64d(bank.kdf.salt), iterations: bank.kdf.iter, hash: 'SHA-256' }, km, 512);
+    }).then(function (bits) {
+      var u = new Uint8Array(bits), entry = bank.keys[toHex(u.subarray(32, 40))];
+      if (!entry) return null;
+      return aesOpen(u.subarray(0, 32), b64d(entry.iv), b64d(entry.wk));
+    });
+  }
+  // resolves to 'ok' | 'format' | 'nocrypto' | 'network' | 'unknown'
+  function unlockWithCode(raw) {
+    var code = normCode(raw);
+    if (!code) return Promise.resolve('format');
+    if (!subtle || !window.TextDecoder) return Promise.resolve('nocrypto');
+    return loadBankFile().then(function (bank) {
+      return keyFromCode(bank, code).then(function (K) {
+        if (!K) return 'unknown';
+        return openBank(bank, K).then(function () {
+          S.unlock = { code: fmtCode(code), k: b64e(K), built: bank.built || '' };
+          S.sess = null; save(); ping('unlocked');
+          return 'ok';
+        });
+      }, function () { return 'unknown'; });
+    }, function () { return 'network'; });
+  }
+  function restoreUnlock() {
+    if (!S.unlock || !S.unlock.k) return Promise.resolve();
+    if (!subtle || !window.TextDecoder) return Promise.resolve();
+    return loadBankFile().then(function (bank) {
+      return openBank(bank, b64d(S.unlock.k)).catch(function () {
+        // the bank key changed since this device unlocked: try the stored code again
+        return unlockWithCode(S.unlock.code).then(function (r) {
+          if (r === 'unknown') { S.unlock = null; save(); ui.revoked = true; }
+        });
+      });
+    }, function () { ui.netFail = true; });
+  }
+  function codeFromUrl() {
+    var m = /[?&]code=([^&#]+)/.exec(location.search || '');
+    if (!m) return Promise.resolve();
+    var raw = decodeURIComponent(m[1]);
+    try { history.replaceState(null, '', location.pathname + (location.hash || '')); } catch (e) { /* keep the url */ }
+    if (unlocked()) return Promise.resolve();
+    return unlockWithCode(raw).then(function (r) {
+      ui.msg = r === 'ok' ? { ok: true, text: '解锁成功，全部题目已开放。' } : { ok: false, text: codeError(r) };
+      location.hash = 'unlock';
+    });
+  }
+  function codeError(r) {
+    if (r === 'format') return '解锁码是 12 位字母和数字，例如 ABCD-2345-EFGH，请检查后再试。';
+    if (r === 'unknown') return '这个解锁码不对或已失效，请核对后再试，或联系卖家。';
+    if (r === 'nocrypto') return '当前浏览器不支持解锁，请点右上角用 Safari 或 Chrome 打开本页面。';
+    return '题库没有加载出来，请检查网络后重试。';
+  }
+  function sanitize() {
+    var has = function (id) { return !!DB.byId[id]; };
+    if (S.sess) { if (!S.sess.ids || !S.sess.ids.every(has)) S.sess = null; }
+    if (S.exam) { if (!S.exam.ids || !S.exam.ids.every(has)) S.exam = null; }
+  }
+
+  // ---------------------------------------------------------------- speech
+  var canSpeak = 'speechSynthesis' in window && typeof window.SpeechSynthesisUtterance !== 'undefined';
+  function speak(text) {
+    if (!canSpeak) return;
+    try {
+      window.speechSynthesis.cancel();
+      var u = new window.SpeechSynthesisUtterance(text);
+      u.lang = 'fr-FR'; u.rate = 0.88;
+      window.speechSynthesis.speak(u);
+    } catch (e) { /* no voice on this device */ }
+  }
+  function hush() { if (canSpeak) { try { window.speechSynthesis.cancel(); } catch (e) { /* nothing playing */ } } }
+
+  // ---------------------------------------------------------------- practice sessions
+  function startPractice(tid, mode) {
+    var qs;
+    if (mode === 'wrong') qs = shuffle(mistakes());
+    else {
+      qs = pool().filter(function (q) { return q.t === tid && !mastered(q.id); });
+      if (mode === 'situ') qs = qs.filter(function (q) { return q.k === 's'; });
+      else qs = mixKinds(qs);
+    }
+    qs = qs.slice(0, SET);
+    if (!qs.length) return false;
+    S.sess = { theme: tid, mode: mode, ids: qs.map(function (q) { return q.id; }), i: 0, perm: {}, ans: {} };
+    save();
+    return true;
+  }
+  // up to 4 situational questions per set, spread between the knowledge questions
+  function mixKinds(qs) {
+    var k = qs.filter(function (q) { return q.k === 'c'; }), s = qs.filter(function (q) { return q.k === 's'; });
+    var ns = Math.min(s.length, Math.max(4, SET - k.length)), nk = Math.min(k.length, SET - ns);
+    var out = k.slice(0, nk), step = (nk + 1) / (ns + 1);
+    for (var i = 0; i < ns; i++) out.splice(Math.min(out.length, Math.round(step * (i + 1)) + i), 0, s[i]);
+    return out.concat(k.slice(nk), s.slice(ns));
+  }
+  function permFor(holder, id) {
+    if (!holder.perm[id]) holder.perm[id] = shuffle([0, 1, 2, 3]).join('');
+    return holder.perm[id].split('').map(Number);
+  }
+  function nextTheme() {
+    for (var i = 0; i < THEMES.length; i++) if (counts(THEMES[i].id).todo > 0) return THEMES[i].id;
+    return null;
+  }
+
+  // ---------------------------------------------------------------- exam
+  function startExam(mini) {
+    var p = pool(), ids = [];
+    THEMES.forEach(function (t) {
+      var nk = mini ? t.mk : t.k, ns = mini ? t.ms : t.s;
+      var k = shuffle(p.filter(function (q) { return q.t === t.id && q.k === 'c'; })).slice(0, nk);
+      var s = shuffle(p.filter(function (q) { return q.t === t.id && q.k === 's'; })).slice(0, ns);
+      ids = ids.concat(k.concat(s).map(function (q) { return q.id; }));
+    });
+    S.exam = { ids: ids, perm: {}, ans: {}, flags: {}, i: 0, start: Date.now(), dur: (mini ? MINI.min : EXAM.min) * 60, mini: !!mini };
+    save();
+  }
+  function examLeft() { return S.exam ? S.exam.dur - (Date.now() - S.exam.start) / 1000 : 0; }
+  function finishExam() {
+    var x = S.exam; if (!x) return;
+    var th = {}, score = 0, items = [];
+    x.ids.forEach(function (id) {
+      var q = DB.byId[id], a = x.ans[id], ok = a === 0;
+      th[q.t] = th[q.t] || [0, 0]; th[q.t][1]++;
+      if (ok) { th[q.t][0]++; score++; }
+      if (a !== undefined) record(id, ok);
+      items.push([id, a === undefined ? -1 : a, permFor(x, id).join('')]);
+    });
+    var passAt = x.mini ? MINI.pass : EXAM.pass;
+    S.exams.unshift({ ts: Date.now(), target: S.target, mini: x.mini, score: score, n: x.ids.length, passAt: passAt, secs: Math.min(x.dur, Math.round((Date.now() - x.start) / 1000)), th: th, items: items });
+    S.exams = S.exams.slice(0, 10);
+    S.exam = null; ui.resultIdx = 0; ui.open = {};
+    save();
+    ping(x.mini ? 'mini_done' : 'exam_done');
+  }
+
+  // ---------------------------------------------------------------- pieces of markup
+  var ICON = {
+    home: '<path d="M4 11.5 12 4l8 7.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/>',
+    exam: '<circle cx="12" cy="13.5" r="7"/><path d="M12 9.5v4l2.6 1.8M9.5 3.5h5"/>',
+    mistakes: '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="m9.5 9.5 5 5m0-5-5 5"/>',
+    words: '<path d="M4 6.5h9M8.5 4v2.5M11 6.5c-.6 3.2-2.8 5.8-6.5 7.3M6.5 9.5c1 2 2.800 3.500 5 4.300"/><path d="m13 20 3.500-9 3.500 9M14.200 17h4.600"/>',
+    about: '<circle cx="12" cy="12" r="8.500"/><path d="M12 11v5.500M12 7.600v.3"/>',
+    say: '<path d="M4 10v4h3l4.500 3.500v-11L7 10z"/><path d="M15.500 9a4.200 4.200 0 0 1 0 6M18 6.500a7.600 7.600 0 0 1 0 11"/>'
+  };
+  function icon(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[n] + '</svg>'; }
+  function tabs(active) {
+    var m = S.target ? mistakes().length : 0;
+    var items = [['home', '首页'], ['exam', '模考'], ['mistakes', '错题'], ['words', '生词'], ['about', '说明']];
+    return '<nav class="tabs" aria-label="主导航"><ul>' + items.map(function (it) {
+      var dot = it[0] === 'mistakes' && m ? '<span class="dot">' + (m > 99 ? '99+' : m) + '</span>' : '';
+      return '<li><a href="#' + it[0] + '"' + (active === it[0] ? ' aria-current="page"' : '') + '>' + icon(it[0]) + '<span>' + it[1] + '</span>' + dot + '</a></li>';
+    }).join('') + '</ul></nav>';
+  }
+  function brand() {
+    return '<header class="brand"><h1>公民考试中文题库</h1><span class="mark" title="40 题答对 32 题通过"><b>32</b>/40</span></header>';
+  }
+  function bar(done, total, cls) {
+    var w = total ? Math.round(done / total * 1000) / 10 : 0;
+    return '<div class="bar ' + (cls || '') + '" role="img" aria-label="' + done + ' / ' + total + '"><i style="width:' + w + '%"></i></div>';
+  }
+  function payBlock(lead) {
+    var t = totals();
+    return '<section class="pay"><h2>' + esc(lead || '解锁全部题目') + '</h2><ul>' +
+      '<li>' + LEVELS[S.target || 'csp'].zh + '全部 <span class="num">' + t.know + '</span> 道官方知识题，逐题中文翻译和讲解</li>' +
+      '<li><span class="num">' + t.situ + '</span> 道情景练习题（正式考试 40 题里有 12 题是情景题）</li>' +
+      '<li>完整模拟考试：40 题、45 分钟、32 题及格，可以反复考</li>' +
+      '<li>两种居留卡的题库都包含，一次付款长期使用</li></ul>' +
+      '<div class="row between"><span class="price">' + esc(CFG.price || '') + '<small>一次性付款</small></span>' +
+      '<a class="btn" href="#unlock">去解锁</a></div></section>';
+  }
+  function modal() {
+    var m = ui.modal; if (!m) return '';
+    return '<div class="veil" data-a="veil"><div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(m.title) + '">' +
+      '<h2>' + esc(m.title) + '</h2>' + (m.body || '') +
+      '<div class="stack">' + m.actions.map(function (a) {
+        return '<button class="btn wide ' + (a.cls || '') + '" data-a="' + a.a + '"' + (a.v !== undefined ? ' data-v="' + esc(a.v) + '"' : '') + '>' + esc(a.label) + '</button>';
+      }).join('') + '</div></div></div>';
+  }
+  function srcLink(q) {
+    if (q.s === undefined || !DB.src[q.s]) return '';
+    var s = DB.src[q.s];
+    return '<a class="src" href="' + esc(s[1]) + '" target="_blank" rel="noopener">对照官方讲义：<span lang="fr">' + esc(s[0]) + '</span> ↗</a>';
+  }
+  // one question. o: { perm, chosen, zh, mode: 'practice' | 'exam' | 'review' }
+  function question(q, o) {
+    var answered = o.chosen !== undefined && o.chosen !== -1;
+    var reveal = o.mode === 'review' || (o.mode === 'practice' && answered);
+    var showZh = o.zh || reveal;
+    var kind = q.k === 's' ? '<span class="tag blue">情景题</span><span class="tag">本站练习题，非官方原题</span>' : '<span class="tag blue">知识题</span><span class="tag">官方题目</span>';
+    var out = '<div class="kind">' + kind + '</div><p class="stem" lang="fr">' + esc(q.q) + '</p>';
+    if (o.mode !== 'exam') {
+      out += '<div class="tools">' +
+        (canSpeak ? '<button class="chip" data-a="say">' + icon('say') + '朗读</button>' : '') +
+        (o.mode === 'practice' ? '<button class="chip" data-a="zh" aria-pressed="' + (o.zh ? 'true' : 'false') + '">' + (o.zh ? '中文：开' : '中文：关') + '</button>' : '') + '</div>';
+    }
+    if (showZh) out += '<p class="stemz">' + esc(q.qz) + '</p>';
+    out += '<div class="opts">' + o.perm.map(function (orig, pos) {
+      var cls = 'opt', dis = '';
+      if (reveal) {
+        dis = ' disabled';
+        if (orig === 0) cls += ' right'; else if (orig === o.chosen) cls += ' wrong'; else cls += ' dim';
+      } else if (o.mode === 'exam' && o.chosen === orig) cls += ' sel';
+      return '<button class="' + cls + '" data-a="' + (o.mode === 'exam' ? 'exam-pick' : 'pick') + '" data-v="' + orig + '"' + dis + '>' +
+        '<span class="let">' + LETTERS[pos] + '</span><span class="txt"><span class="fr" lang="fr">' + esc(q.o[orig]) + '</span>' +
+        (showZh ? '<span class="zh">' + esc(q.oz[orig]) + '</span>' : '') + '</span></button>';
+    }).join('') + '</div>';
+    if (reveal) {
+      var ok = o.chosen === 0, letter = LETTERS[o.perm.indexOf(0)];
+      var head = ok ? '答对了' : (answered ? '答错了，正确答案是 ' + letter : '没有作答，正确答案是 ' + letter);
+      out += '<section class="copy ' + (ok ? 'good' : 'miss') + '"><span class="verdict" aria-hidden="true">' + (ok ? '✓' : '✗') + '</span>' +
+        '<h3>' + head + '</h3><p>' + esc(q.e) + '</p>' +
+        (q.v && q.v.length ? '<ul class="voc">' + q.v.map(function (v) { return '<li><span class="w" lang="fr">' + esc(v[0]) + '</span><span>' + esc(v[1]) + '</span></li>'; }).join('') + '</ul>' : '') +
+        srcLink(q) + '</section>';
+    }
+    return out;
+  }
+  function disclaimer() {
+    return '<footer class="foot"><p>本站不是法国政府网站，与法国内政部和考试机构没有任何关系。官方备考资料是免费的，见 <a href="https://formation-civique.interieur.gouv.fr/examen-civique/" target="_blank" rel="noopener">formation-civique.interieur.gouv.fr</a>。本站收费的是中文翻译、讲解和练习工具。</p>' +
+      '<p>知识题题干来自内政部公布的官方清单（Ministère de l’Intérieur – DIAN，Licence Ouverte 2.0，查阅于 ' + esc(DB.free.consulted || DB.free.built) + '）。官方没有公布选项：选项、翻译和讲解由本站编写，正式考试的选项措辞会不同，请理解知识点，不要死记选项。</p></footer>';
+  }
+
+  // ---------------------------------------------------------------- views
+  function vChoose() {
+    var m = DB.free.meta.counts;
+    function n(lv) { var c = 0; THEMES.forEach(function (t) { c += m[lv][t.id].c; }); return c; }
+    return '<main class="wrap">' + brand() +
+      '<p>法国居留公民考试（examen civique）练习。法语原题，每题都有中文翻译和讲解。</p>' +
+      '<section class="stack"><h2>你要申请哪一种居留卡？</h2>' +
+      ['csp', 'cr'].map(function (lv) {
+        return '<button class="pick" data-a="target" data-v="' + lv + '"><span class="grow"><span class="t1">' + LEVELS[lv].zh + '</span><br><span class="t2" lang="fr">' + LEVELS[lv].fr + '</span></span><span class="cnt"><b>' + n(lv) + '</b> 道官方题<span class="go" aria-hidden="true">›</span></span></button>';
+      }).join('') +
+      '<p class="small">两种卡的考题不一样，十年卡更难。选错了没关系，之后可以在首页随时切换。入籍考试的题目暂未收录。</p></section>' +
+      disclaimer() + '</main>' + tabs('home');
+  }
+  function vHome() {
+    if (!S.target) return vChoose();
+    var t = totals(), sess = S.sess && S.sess.i < S.sess.ids.length ? S.sess : null;
+    var out = '<main class="wrap">' + brand() +
+      '<div class="seg" role="group" aria-label="目标居留卡">' + ['csp', 'cr'].map(function (lv) {
+        return '<button data-a="target" data-v="' + lv + '" aria-pressed="' + (S.target === lv) + '"><b>' + LEVELS[lv].zh + '</b><span lang="fr">' + LEVELS[lv].fr + '</span></button>';
+      }).join('') + '</div>';
+    if (ui.netFail) out += '<p class="note warn">已购买的题库这次没有加载出来，目前只显示免费题。请检查网络后刷新页面。</p>';
+    if (ui.revoked) out += '<p class="note warn">这台设备保存的解锁码已失效，请重新输入解锁码或联系卖家。</p>';
+    out += '<section class="hero"><div class="row between"><span class="sub">已掌握</span>' + (unlocked() ? '<span class="tag blue">已解锁全部题目</span>' : '<span class="tag">免费试用：开放 ' + t.have + ' 题</span>') + '</div>' +
+      '<div class="big">' + t.done + '<small> / ' + t.total + ' 题</small></div>' + bar(t.done, t.total) +
+      '<div class="actions"><button class="btn" data-a="continue">' + (sess ? '继续练习' : (answeredCount() ? '接着练' : '开始练习')) + '</button><a class="btn ghost" href="#exam">模拟考试</a></div></section>';
+    out += '<section class="stack"><h2>五个主题</h2><div class="themes">' + THEMES.map(function (th) {
+      var c = counts(th.id);
+      return '<button class="theme" data-a="theme" data-v="' + th.id + '"><span><span class="t1">' + th.zh + '</span><br><span class="t2" lang="fr">' + th.fr + '</span></span>' +
+        '<span class="cnt"><b>' + c.done + '</b> / ' + c.total + '<span class="go" aria-hidden="true">›</span></span>' + bar(c.done, c.total, 'ok') + '</button>';
+    }).join('') + '</div></section>';
+    if (!unlocked()) out += payBlock('免费题做完了？解锁全部 ' + t.total + ' 题');
+    return out + disclaimer() + '</main>' + tabs('home');
+  }
+  function themeSheet(tid) {
+    var th = theme(tid), c = counts(tid), acts = [];
+    var situTodo = pool().filter(function (q) { return q.t === tid && q.k === 's' && !mastered(q.id); }).length;
+    if (c.todo) acts.push({ label: (c.done ? '接着练' : '开始练') + '（每组 ' + Math.min(SET, c.todo) + ' 题）', a: 'start', v: tid + '|todo' });
+    if (situTodo) acts.push({ label: '只练情景题', a: 'start', v: tid + '|situ', cls: 'ghost' });
+    if (c.done) acts.push({ label: '清空这个主题的记录，从头重练', a: 'restart', v: tid, cls: 'quiet' });
+    if (!unlocked() && !c.todo) acts.unshift({ label: '解锁全部题目', a: 'goto', v: 'unlock' });
+    acts.push({ label: '关闭', a: 'close', cls: 'quiet' });
+    var body = '<p class="sub" lang="fr">' + th.fr + '</p><ul class="rules">' +
+      '<li><span class="k">官方知识题</span><span class="v"><b>' + c.know + '</b> 题</span></li>' +
+      (c.situ ? '<li><span class="k">情景练习题</span><span class="v"><b>' + c.situ + '</b> 题</span></li>' : '') +
+      '<li><span class="k">正式考试</span><span class="v">这个主题出 <b>' + (th.k + th.s) + '</b> 题' + (th.s ? '（其中 ' + th.s + ' 题情景题）' : '') + '</span></li>' +
+      '<li><span class="k">你的进度</span><span class="v">已掌握 <b>' + c.done + '</b> / ' + c.total + (unlocked() ? '' : '，免费开放 ' + c.have + ' 题') + '</span></li></ul>' +
+      (!unlocked() && !c.todo ? '<p class="note blue">这个主题的免费题已经全部掌握，其余 ' + (c.total - c.have) + ' 题解锁后可以练。</p>' : '');
+    ui.modal = { title: th.zh, body: body, actions: acts };
+  }
+  function vQuiz() {
+    var s = S.sess;
+    if (!s) return vHome();
+    var th = s.mode === 'wrong' ? { zh: '错题重做' } : theme(s.theme);
+    if (s.i >= s.ids.length) {            // set finished
+      var right = s.ids.filter(function (id) { return s.ans[id] === 0; }).length;
+      var more = s.mode === 'wrong' ? mistakes().length : pool().filter(function (q) { return q.t === s.theme && !mastered(q.id) && (s.mode !== 'situ' || q.k === 's'); }).length;
+      var c = s.mode === 'wrong' ? null : counts(s.theme);
+      var out = '<main class="wrap">' + brand() + '<section class="hero"><span class="sub">' + th.zh + ' · 这一组做完了</span>' +
+        '<div class="big">' + right + '<small> / ' + s.ids.length + ' 题答对</small></div>' + bar(right, s.ids.length, 'ok') + '</section>';
+      out += '<div class="stack">';
+      if (more) out += '<button class="btn wide" data-a="start" data-v="' + s.theme + '|' + s.mode + '">' + (s.mode === 'wrong' ? '继续重做错题（还有 ' + more + ' 题）' : '下一组（还有 ' + more + ' 题没掌握）') + '</button>';
+      else if (s.mode === 'wrong') out += '<p class="note blue">错题本清空了。</p>';
+      else if (!unlocked() && c && c.have < c.total) out += '<p class="note blue">这个主题的免费题已经全部掌握，其余 ' + (c.total - c.have) + ' 题解锁后可以练。</p>';
+      else out += '<p class="note blue">这个主题的题目已经全部掌握。</p>';
+      var nt = nextTheme();
+      if (!more && nt && s.mode !== 'wrong') out += '<button class="btn wide" data-a="start" data-v="' + nt + '|todo">去练「' + theme(nt).zh + '」</button>';
+      out += '<a class="btn wide ghost" href="#home">回首页</a></div>';
+      if (!unlocked() && !more) out += payBlock();
+      return out + '</main>' + tabs('home');
+    }
+    var id = s.ids[s.i], q = DB.byId[id], chosen = s.ans[id];
+    var last = s.i === s.ids.length - 1;
+    return '<main class="wrap bare"><div class="qbar"><a class="back" href="#home" aria-label="返回首页">‹ 返回</a><span class="ttl">' + th.zh + '</span><span class="pos">' + (s.i + 1) + ' / ' + s.ids.length + '</span></div>' +
+      question(q, { perm: permFor(s, id), chosen: chosen, zh: !!S.zhOn, mode: 'practice' }) + '</main>' +
+      '<div class="dock"><div class="in"><button class="btn quiet fix" data-a="prev"' + (s.i === 0 ? ' disabled' : '') + '>上一题</button>' +
+      '<button class="btn" data-a="next"' + (chosen === undefined ? ' disabled' : '') + '>' + (last ? '完成这一组' : '下一题') + '</button></div></div>';
+  }
+  function vExam() {
+    if (!S.target) return vChoose();
+    var x = S.exam;
+    if (!x) {
+      var un = unlocked(), hist = S.exams.filter(function (e) { return e.target === S.target; }).slice(0, 5);
+      var out = '<main class="wrap">' + brand() + '<section class="stack"><h2>模拟考试 · ' + LEVELS[S.target].zh + '</h2>' +
+        '<p class="sub">和正式考试一样的题量、时间和及格线。考试过程中只有法语，没有中文和讲解，交卷后可以逐题看讲解。</p>' +
+        '<ul class="rules"><li><span class="k">题量</span><span class="v"><b>40</b> 题单选：28 题知识题 + 12 题情景题</span></li>' +
+        '<li><span class="k">时间</span><span class="v">最长 <b>45</b> 分钟</span></li>' +
+        '<li><span class="k">及格</span><span class="v">答对 <b>32</b> 题（80%）</span></li>' +
+        '<li><span class="k">各主题</span><span class="v">' + THEMES.map(function (t) { return t.zh + ' <b>' + (t.k + t.s) + '</b>'; }).join('、') + '</span></li></ul>';
+      out += un ? '<button class="btn wide" data-a="exam-start" data-v="full">开始考试</button>'
+        : '<button class="btn wide" data-a="exam-start" data-v="mini">免费试考：' + MINI.n + ' 题 · ' + MINI.min + ' 分钟</button><p class="small">试考从免费题里抽题，答对 ' + MINI.pass + ' 题算通过。完整的 40 题模拟考试在解锁后开放。</p>';
+      out += '</section>';
+      if (hist.length) out += '<section class="stack"><h2>最近的成绩</h2><ul class="split">' + hist.map(function (e) {
+        var idx = S.exams.indexOf(e);
+        return '<li><button class="link" data-a="result-show" data-v="' + idx + '">' + dateZh(e.ts) + (e.mini ? ' · 试考' : '') + '</button><span class="n' + (e.score >= e.passAt ? '' : ' lowv') + '">' + e.score + ' / ' + e.n + '</span></li>';
+      }).join('') + '</ul></section>';
+      if (!un) out += payBlock('解锁完整模拟考试');
+      return out + '</main>' + tabs('exam');
+    }
+    var id = x.ids[x.i], q = DB.byId[id], left = examLeft(), last = x.i === x.ids.length - 1;
+    var answered = x.ids.filter(function (k) { return x.ans[k] !== undefined; }).length;
+    return '<main class="wrap bare"><div class="qbar"><span class="timer' + (left < 300 ? ' low' : '') + '" id="timer" aria-label="剩余时间">' + mmss(left) + '</span>' +
+      '<span class="ttl">已答 ' + answered + ' / ' + x.ids.length + '</span><button class="chip" data-a="exam-grid">第 ' + (x.i + 1) + ' 题 ▾</button></div>' +
+      question(q, { perm: permFor(x, id), chosen: x.ans[id], zh: false, mode: 'exam' }) +
+      '<div class="row between"><button class="chip" data-a="exam-flag" aria-pressed="' + (x.flags[id] ? 'true' : 'false') + '">' + (x.flags[id] ? '已标记，稍后再看' : '标记这题') + '</button><button class="link" data-a="exam-quit">放弃本次考试</button></div></main>' +
+      '<div class="dock"><div class="in"><button class="btn quiet fix" data-a="exam-prev"' + (x.i === 0 ? ' disabled' : '') + '>上一题</button>' +
+      (last ? '<button class="btn" data-a="exam-submit">交卷</button>' : '<button class="btn" data-a="exam-next">下一题</button>') + '</div></div>';
+  }
+  function examGrid() {
+    var x = S.exam;
+    var body = '<div class="grid40">' + x.ids.map(function (id, i) {
+      var cls = (x.ans[id] !== undefined ? 'done ' : '') + (i === x.i ? 'cur ' : '') + (x.flags[id] ? 'flag' : '');
+      return '<button class="' + cls + '" data-a="exam-go" data-v="' + i + '" aria-label="第 ' + (i + 1) + ' 题">' + (i + 1) + '</button>';
+    }).join('') + '</div><p class="small">蓝色是已作答，黄点是标记过的题。</p>';
+    ui.modal = { title: '题号', body: body, actions: [{ label: '交卷', a: 'exam-submit' }, { label: '继续答题', a: 'close', cls: 'quiet' }] };
+  }
+  function reviewRow(q, n, chosen, perm, key) {
+    var ok = chosen === 0, open = !!ui.open[key];
+    return '<li><button class="qrow" data-a="open" data-v="' + esc(key) + '" aria-expanded="' + open + '"><span class="i">' + n + '</span><span class="s" lang="fr">' + esc(q.q) + '</span><span class="m ' + (ok ? 'okm' : 'badm') + '">' + (ok ? '✓' : '✗') + '</span></button>' +
+      (open ? '<div class="detail">' + question(q, { perm: perm, chosen: chosen, zh: true, mode: 'review' }) + '</div>' : '') + '</li>';
+  }
+  function vResult() {
+    var e = S.exams[ui.resultIdx] || S.exams[0];
+    if (!e) return vExam();
+    var pass = e.score >= e.passAt, wrong = e.items.filter(function (it) { return it[1] !== 0; }).length;
+    var out = '<main class="wrap">' + brand() + '<section class="hero"><span class="sub">' + (e.mini ? '试考' : '模拟考试') + ' · ' + LEVELS[e.target].zh + ' · ' + dateZh(e.ts) + '</span>' +
+      '<div class="big">' + e.score + '<small> / ' + e.n + '</small></div>' +
+      '<p class="verdict-line ' + (pass ? 'pass' : 'fail') + '">' + (pass ? '通过' : '未通过，还差 ' + (e.passAt - e.score) + ' 题') + '</p>' +
+      '<div class="scale' + (pass ? ' pass' : '') + '"><div class="track"><i style="width:' + (e.score / e.n * 100) + '%"></i></div>' +
+      '<div class="passmark" style="left:' + (e.passAt / e.n * 100) + '%"><span>及格线 ' + e.passAt + '</span></div><div class="ends"><span>0</span><span>' + e.n + '</span></div></div>' +
+      '<p class="sub">用时 ' + Math.floor(e.secs / 60) + ' 分 ' + (e.secs % 60) + ' 秒</p></section>';
+    out += '<section class="stack"><h2>各主题得分</h2><ul class="split">' + THEMES.filter(function (t) { return e.th[t.id]; }).map(function (t) {
+      var r = e.th[t.id];
+      return '<li><span>' + t.zh + '</span><span class="n' + (r[0] / r[1] < 0.8 ? ' lowv' : '') + '">' + r[0] + ' / ' + r[1] + '</span></li>';
+    }).join('') + '</ul></section>';
+    out += '<section class="stack"><h2>逐题讲解' + (wrong ? '（错 ' + wrong + ' 题）' : '') + '</h2><p class="small">点开任意一题看中文翻译和讲解。答错的题已自动加入错题本。</p><ul class="qlist">' + e.items.map(function (it, i) {
+      var q = DB.byId[it[0]];
+      if (!q) return '';
+      return reviewRow(q, i + 1, it[1], it[2].split('').map(Number), 'r' + i);
+    }).join('') + '</ul></section>';
+    out += '<div class="stack"><a class="btn wide" href="#exam">再考一次</a>' + (wrong ? '<a class="btn wide ghost" href="#mistakes">去错题本</a>' : '') + '</div>';
+    if (!unlocked()) out += payBlock('解锁完整模拟考试');
+    return out + '</main>' + tabs('exam');
+  }
+  function vMistakes() {
+    if (!S.target) return vChoose();
+    var ms = mistakes();
+    var out = '<main class="wrap">' + brand() + '<section class="stack"><h2>错题本 · ' + LEVELS[S.target].zh + '</h2>';
+    if (!ms.length) return out + '<p class="note">还没有错题。练习和模拟考试里答错的题会自动收进这里，连续答对两次后移出。</p><a class="btn wide" href="#home">去练习</a></section></main>' + tabs('mistakes');
+    out += '<p class="sub">共 <span class="num">' + ms.length + '</span> 题。每题连续答对两次后自动移出。</p>' +
+      '<button class="btn wide" data-a="start" data-v="all|wrong">重做错题（每组最多 ' + SET + ' 题）</button></section>';
+    THEMES.forEach(function (t) {
+      var list = ms.filter(function (q) { return q.t === t.id; });
+      if (!list.length) return;
+      out += '<section class="stack"><h2>' + t.zh + '（' + list.length + '）</h2><ul class="qlist">' + list.map(function (q, i) {
+        return reviewRow(q, i + 1, -1, [0, 1, 2, 3], 'm' + q.id);
+      }).join('') + '</ul></section>';
+    });
+    return out + '</main>' + tabs('mistakes');
+  }
+  function vWords() {
+    if (!S.target) return vChoose();
+    var out = '<main class="wrap">' + brand() + '<section class="stack"><h2>生词表 · ' + LEVELS[S.target].zh + '</h2><p class="sub">考题里反复出现、值得先认熟的法语词。' + (canSpeak ? '点一下可以听发音。' : '') + '</p></section>';
+    var n = 0, seen = {};
+    THEMES.forEach(function (t) {
+      var list = [];
+      pool().forEach(function (q) {
+        if (q.t !== t.id) return;
+        (q.v || []).forEach(function (v) { var k = v[0].toLowerCase(); if (!seen[k]) { seen[k] = 1; list.push(v); } });
+      });
+      if (!list.length) return;
+      list.sort(function (a, b) { return a[0].replace(/^(l'|le |la |les |un |une |des )/i, '').localeCompare(b[0].replace(/^(l'|le |la |les |un |une |des )/i, ''), 'fr'); });
+      n += list.length;
+      out += '<section class="stack"><h2>' + t.zh + '（' + list.length + '）</h2><ul class="words">' + list.map(function (v) {
+        return '<li><button class="w" lang="fr" data-a="word" data-v="' + esc(v[0]) + '">' + esc(v[0]) + '</button><span>' + esc(v[1]) + '</span></li>';
+      }).join('') + '</ul></section>';
+    });
+    if (!unlocked()) out += '<p class="note blue">现在显示的是免费题里的 ' + n + ' 个生词，解锁后显示全部题目的生词。</p>' + payBlock();
+    return out + '</main>' + tabs('words');
+  }
+  function vAbout() {
+    var out = '<main class="wrap">' + brand() + '<section class="stack"><h2>关于公民考试</h2><ul class="facts">' +
+      '<li>从 2026 年 1 月 1 日起，第一次申请多年居留卡（<span lang="fr">carte de séjour pluriannuelle</span>）或十年居留卡（<span lang="fr">carte de résident</span>）要提交公民考试（<span lang="fr">examen civique</span>）的通过证明。续签不需要。</li>' +
+      '<li>考试是 40 道法语单选题，每题 4 个选项，只有 1 个正确。其中 28 题是知识题，12 题是情景题。</li>' +
+      '<li>在平板或电脑上作答，最长 45 分钟。答对 32 题（80%）通过。</li>' +
+      '<li>可以随时报名，没通过可以再考，次数不限。通过证明长期有效。</li>' +
+      '<li>十年居留卡的通过证明，申请多年居留卡时同样有效。</li>' +
+      '<li>65 岁以上的人不用考。因残疾或健康原因确实无法参加的，可以凭医生证明申请调整考试方式或免考。</li>' +
+      '<li>不是所有类别的居留卡都要求考试，例如不需要签署融入合同（<span lang="fr">CIR</span>）的类别就不用。自己属于哪种情况，请看下面 service-public 的页面。</li>' +
+      '<li>考试中作弊会被禁考两年。</li></ul>' +
+      '<p class="small">以上内容整理自法国内政部和 service-public.gouv.fr 的官方页面，规定可能调整，办理前请以官方页面为准。</p></section>';
+    out += '<section class="stack"><h2>官方入口</h2><ul class="facts">' +
+      '<li><a href="https://formation-civique.interieur.gouv.fr/examen-civique/" target="_blank" rel="noopener">内政部：考试说明、官方题目清单和讲义（免费）↗</a></li>' +
+      '<li><a href="https://www.service-public.gouv.fr/particuliers/vosdroits/F39530" target="_blank" rel="noopener">service-public：谁需要考、怎么报名 ↗</a></li>' +
+      '<li><a href="https://francais.cci-paris-idf.fr/candidat?produit=21" target="_blank" rel="noopener">考试机构一：巴黎工商会（CCI Paris Île-de-France）↗</a></li>' +
+      '<li><a href="https://test-civique.fr/inscription" target="_blank" rel="noopener">考试机构二：France Éducation International 报名 ↗</a></li></ul>' +
+      '<p class="small">报名、考点和费用以两家考试机构的网站为准。</p></section>';
+    out += '<section class="stack"><h2>这个题库是什么</h2><ul class="facts">' +
+      '<li>知识题的题干是内政部公布的官方题目。官方没有公布选项，本站的选项、中文翻译和讲解是自己编写的，并对照官方讲义核对。</li>' +
+      '<li>情景题官方没有公布，本站的情景题是按官方讲义编写的练习题，用来熟悉题型。</li>' +
+      '<li>正式考试的选项措辞会和这里不同。把知识点弄懂，比背选项有用。</li>' +
+      '<li>发现错误请告诉我们' + (CFG.contact ? '：' + esc(CFG.contact) : '') + '，核实后会更正。</li>' +
+      '<li>练习记录只保存在你这台设备上，本站不要求注册，不收集个人信息。</li></ul>' +
+      (CFG.seller ? '<p class="small">经营者：' + esc(CFG.seller) + '</p>' : '') + '</section>';
+    out += '<section class="stack"><h2>设置</h2>' +
+      '<div class="row between"><span>题库</span><span class="row">' + (unlocked() ? '<span class="tag blue">已解锁</span>' : '<a class="link" href="#unlock">输入解锁码</a>') + '</span></div>' +
+      '<div class="row between"><span>练习记录</span><button class="link" data-a="reset">清空全部记录</button></div></section>';
+    return out + (DB.free ? disclaimer() : '') + '</main>' + tabs('about');
+  }
+  function vUnlock() {
+    ping('paywall');
+    var out = '<main class="wrap">' + brand();
+    if (unlocked()) {
+      return out + '<section class="stack"><h2>已解锁全部题目</h2>' + (ui.msg ? '<p class="msg ok">' + esc(ui.msg.text) + '</p>' : '') +
+        '<p class="note blue">这台设备已经解锁。换手机或换浏览器时，输入同一个解锁码即可。<br>你的解锁码：<b class="num">' + esc(S.unlock ? S.unlock.code : '') + '</b></p><a class="btn wide" href="#home">回首页</a></section></main>' + tabs('home');
+    }
+    var t = S.target ? totals() : null;
+    out += '<section class="pay"><h2>解锁全部题目</h2><ul>' +
+      '<li>多年居留卡和十年居留卡两套官方知识题，共 <span class="num">' + DB.free.meta.total + '</span> 题（含情景练习题），逐题中文翻译和讲解</li>' +
+      '<li>完整模拟考试：40 题、45 分钟、32 题及格，可以反复考</li>' +
+      '<li>错题本、生词表全部开放</li><li>一次付款，长期使用，题目更正和补充不再收费</li></ul>' +
+      '<div class="price">' + esc(CFG.price || '') + '<small>一次性付款</small></div>' +
+      (CFG.payUrl ? '<a class="btn wide" href="' + esc(CFG.payUrl) + '" target="_blank" rel="noopener">去付款</a><p class="small">付款完成后会自动回到本站并解锁。如果没有自动解锁，把收到的解锁码填在下面。</p>'
+        : '<p class="small">' + (CFG.contact ? '购买请联系：' + esc(CFG.contact) + '。付款后会收到一个解锁码。' : '付款后会收到一个解锁码，填在下面即可。') + '</p>') +
+      '</section>';
+    out += '<section class="stack"><h2>已经有解锁码</h2><form id="codeform" class="stack"><div class="field"><input id="code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="例如 ABCD-2345-EFGH" aria-label="解锁码" maxlength="20"><button class="btn" type="submit"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '解锁中' : '解锁') + '</button></div>' +
+      '<p class="msg ' + (ui.msg ? (ui.msg.ok ? 'ok' : 'bad') : '') + '" role="status">' + (ui.msg ? esc(ui.msg.text) : '') + '</p></form></section>';
+    out += '<section class="stack"><p class="small">官方的备考资料是免费的，不付款也可以在内政部网站上看到全部法语题目和讲义。这里收费的是中文翻译、讲解和练习工具。' + (t ? '免费试用部分开放 ' + t.have + ' 题，可以先试再决定。' : '') + '</p></section>';
+    return out + '</main>' + tabs('home');
+  }
+
+  // ---------------------------------------------------------------- routing + render
+  var VIEWS = { home: vHome, quiz: vQuiz, exam: vExam, result: vResult, mistakes: vMistakes, words: vWords, about: vAbout, unlock: vUnlock };
+  function route() { var h = (location.hash || '').replace(/^#/, ''); return VIEWS[h] ? h : 'home'; }
+  function go(name) { if (route() === name) render(true); else location.hash = name; }
+  function render(top) {
+    var r = route();
+    if (S.exam && r !== 'exam') { location.hash = 'exam'; return; }
+    if (r === 'quiz' && !S.sess) { location.hash = 'home'; return; }
+    app.innerHTML = VIEWS[r]() + modal();
+    if (top) window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', function () { hush(); ui.modal = null; if (route() !== 'unlock') ui.msg = null; render(true); });
+
+  setInterval(function () {
+    if (!S.exam) return;
+    var left = examLeft();
+    if (left <= 0) { finishExam(); ui.modal = null; go('result'); return; }
+    var el = document.getElementById('timer');
+    if (el) { el.textContent = mmss(left); el.className = 'timer' + (left < 300 ? ' low' : ''); }
+  }, 1000);
+
+  // ---------------------------------------------------------------- actions
+  var ACT = {
+    target: function (v) { if (!LEVELS[v]) return; if (S.target !== v) { S.target = v; S.sess = null; } save(); render(); },
+    goto: function (v) { ui.modal = null; go(v); },
+    close: function () { ui.modal = null; render(); },
+    veil: function (v, el, ev) { if (ev.target === el) { ui.modal = null; render(); } },
+    theme: function (v) { themeSheet(v); render(); },
+    'continue': function () {
+      if (S.sess && S.sess.i < S.sess.ids.length) return go('quiz');
+      var nt = nextTheme();
+      if (nt && startPractice(nt, 'todo')) return go('quiz');
+      ui.modal = unlocked()
+        ? { title: '全部题目都已掌握', body: '<p>可以去做模拟考试，或者在主题里选择“从头重练”。</p>', actions: [{ label: '去模拟考试', a: 'goto', v: 'exam' }, { label: '关闭', a: 'close', cls: 'quiet' }] }
+        : { title: '免费题都已掌握', body: '<p>其余题目解锁后可以练。</p>', actions: [{ label: '解锁全部题目', a: 'goto', v: 'unlock' }, { label: '关闭', a: 'close', cls: 'quiet' }] };
+      render();
+    },
+    start: function (v) {
+      var p = v.split('|');
+      ui.modal = null;
+      if (startPractice(p[0], p[1])) go('quiz'); else render();
+    },
+    restart: function (v) {
+      ui.modal = { title: '清空「' + theme(v).zh + '」的记录？', body: '<p>这个主题的练习记录和错题会被清空，其他主题不受影响。</p>', actions: [{ label: '清空并从头练', a: 'restart-yes', v: v }, { label: '取消', a: 'close', cls: 'quiet' }] };
+      render();
+    },
+    'restart-yes': function (v) {
+      DB.qs.forEach(function (q) { if (q.t === v) delete S.stats[q.id]; });
+      S.sess = null; save(); ACT.start(v + '|todo');
+    },
+    pick: function (v) {
+      var s = S.sess; if (!s || s.i >= s.ids.length) return;
+      var id = s.ids[s.i]; if (s.ans[id] !== undefined) return;
+      var before = answeredCount();
+      s.ans[id] = Number(v); record(id, Number(v) === 0); save();
+      if (before < 10 && answeredCount() >= 10) ping('ten_answers');
+      hush(); render();
+      var card = document.querySelector('.copy');
+      if (card && card.scrollIntoView) { try { card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) { card.scrollIntoView(false); } }
+    },
+    zh: function () { S.zhOn = !S.zhOn; save(); render(); },
+    say: function () {
+      var q = null, perm = null;
+      if (route() === 'quiz' && S.sess) { var id = S.sess.ids[S.sess.i]; q = DB.byId[id]; perm = permFor(S.sess, id); }
+      if (!q) return;
+      speak(q.q + ' ... ' + perm.map(function (orig, pos) { return LETTERS[pos] + '. ' + q.o[orig]; }).join(' ... '));
+    },
+    word: function (v) { speak(v); },
+    next: function () { var s = S.sess; if (!s) return; s.i = Math.min(s.ids.length, s.i + 1); save(); hush(); render(true); },
+    prev: function () { var s = S.sess; if (!s) return; s.i = Math.max(0, s.i - 1); save(); hush(); render(true); },
+    'exam-start': function (v) { startExam(v === 'mini' || !unlocked()); ui.modal = null; render(true); },
+    'exam-pick': function (v) { var x = S.exam; if (!x) return; x.ans[x.ids[x.i]] = Number(v); save(); render(); },
+    'exam-next': function () { var x = S.exam; if (!x) return; x.i = Math.min(x.ids.length - 1, x.i + 1); save(); render(true); },
+    'exam-prev': function () { var x = S.exam; if (!x) return; x.i = Math.max(0, x.i - 1); save(); render(true); },
+    'exam-go': function (v) { var x = S.exam; if (!x) return; x.i = Number(v); ui.modal = null; save(); render(true); },
+    'exam-flag': function () { var x = S.exam; if (!x) return; var id = x.ids[x.i]; if (x.flags[id]) delete x.flags[id]; else x.flags[id] = 1; save(); render(); },
+    'exam-grid': function () { examGrid(); render(); },
+    'exam-submit': function () {
+      var x = S.exam; if (!x) return;
+      var miss = x.ids.filter(function (id) { return x.ans[id] === undefined; }).length;
+      ui.modal = { title: '确定交卷？', body: '<p>' + (miss ? '还有 <b class="num">' + miss + '</b> 题没有作答，没答的题按答错计算。' : '全部题目都已作答。') + '剩余时间 <span class="num">' + mmss(examLeft()) + '</span>。</p>', actions: [{ label: '交卷', a: 'exam-submit-yes' }, { label: '继续答题', a: 'close', cls: 'quiet' }] };
+      render();
+    },
+    'exam-submit-yes': function () { finishExam(); ui.modal = null; go('result'); },
+    'exam-quit': function () {
+      ui.modal = { title: '放弃这次考试？', body: '<p>这次的作答不会保存，也不计入成绩。</p>', actions: [{ label: '放弃考试', a: 'exam-quit-yes', cls: 'ghost' }, { label: '继续答题', a: 'close' }] };
+      render();
+    },
+    'exam-quit-yes': function () { S.exam = null; ui.modal = null; save(); render(true); },
+    'result-show': function (v) { ui.resultIdx = Number(v); ui.open = {}; go('result'); },
+    open: function (v) { ui.open[v] = !ui.open[v]; render(); },
+    reset: function () {
+      ui.modal = { title: '清空全部练习记录？', body: '<p>练习进度、错题本和模拟考试成绩都会被清空。解锁状态不受影响。</p>', actions: [{ label: '清空', a: 'reset-yes', cls: 'ghost' }, { label: '取消', a: 'close' }] };
+      render();
+    },
+    'reset-yes': function () { S.stats = {}; S.exams = []; S.sess = null; S.exam = null; ui.modal = null; save(); render(true); }
+  };
+  document.addEventListener('click', function (ev) {
+    var el = ev.target.closest ? ev.target.closest('[data-a]') : null;
+    if (!el || el.disabled) return;
+    var a = el.getAttribute('data-a');
+    if (!ACT[a]) return;
+    ev.preventDefault();
+    ACT[a](el.getAttribute('data-v'), el, ev);
+  });
+  document.addEventListener('submit', function (ev) {
+    if (ev.target.id !== 'codeform') return;
+    ev.preventDefault();
+    if (ui.busy) return;
+    var val = (document.getElementById('code') || {}).value || '';
+    ui.busy = true; ui.msg = null; render();
+    var input = document.getElementById('code'); if (input) input.value = val;
+    unlockWithCode(val).then(function (r) {
+      ui.busy = false;
+      ui.msg = r === 'ok' ? { ok: true, text: '解锁成功，全部题目已开放。' } : { ok: false, text: codeError(r) };
+      ui.revoked = false;
+      render();
+      var again = document.getElementById('code'); if (again && r !== 'ok') again.value = val;
+    });
+  });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && ui.modal) { ui.modal = null; render(); } });
+
+  // ---------------------------------------------------------------- start
+  function fonts() {
+    ['Atkinson+Hyperlegible+Next:wght@400;600;700', 'Atkinson+Hyperlegible+Mono:wght@500;700'].forEach(function (f) {
+      try {
+        var l = document.createElement('link');
+        l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=' + f + '&display=swap';
+        document.head.appendChild(l);
+      } catch (e) { /* system fonts are fine */ }
+    });
+  }
+  try { document.documentElement.lang = 'zh-CN'; } catch (e) { /* not essential */ }
+  fonts();
+  loadFree().then(restoreUnlock).then(codeFromUrl).then(function () {
+    sanitize(); save(); render(true);
+  }).catch(function () {
+    app.innerHTML = '<main class="wrap"><h1>公民考试中文题库</h1><p class="note warn">题目没有加载出来。请检查网络后刷新页面。</p></main>';
+  });
+})();

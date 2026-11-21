@@ -3,3 +3,5 @@ content/
 secrets/
 node_modules/
 *.log
+.wrangler/
+.dev.vars

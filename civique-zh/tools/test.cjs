@@ -15,10 +15,44 @@ const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? path.resolve(process.argv[shotsAt + 1]) : null;
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 
+// ---- a stand-in for Stripe: the unlock function is the real one, only its calls to Stripe are answered here
+const SESSIONS = {
+  cs_live_PAID00000001: { livemode: true, status: 'complete', payment_status: 'paid', payment_link: 'plink_ours', customer_details: { email: 'buyer@example.com' } },
+  cs_live_PROC00000001: { livemode: true, status: 'complete', payment_status: 'unpaid', payment_link: 'plink_ours', customer_details: { email: 'slow@example.com' } },
+  cs_live_OTHER0000001: { livemode: true, status: 'complete', payment_status: 'paid', payment_link: 'plink_other', customer_details: { email: 'other@example.com' } },
+  cs_test_PAID00000001: { livemode: false, status: 'complete', payment_status: 'paid', payment_link: 'plink_ours', customer_details: { email: 'tester@example.com' } },
+};
+for (const id of Object.keys(SESSIONS)) Object.assign(SESSIONS[id], { id, object: 'checkout.session' });
+const ENV = { STRIPE_KEY: 'rk_live_standin', PAYMENT_LINK: 'plink_ours', CONTENT_KEY: Buffer.alloc(32, 7).toString('base64') };
+async function stripeStandIn(url, opts) {
+  const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  if ((opts.headers.authorization || '') !== 'Bearer ' + ENV.STRIPE_KEY) return reply(401, { error: { message: 'bad key' } });
+  const u = new URL(url);
+  const one = /^\/v1\/checkout\/sessions\/([A-Za-z0-9_]+)$/.exec(u.pathname);
+  if (one) return SESSIONS[one[1]] ? reply(200, SESSIONS[one[1]]) : reply(404, { error: { message: 'no such session' } });
+  if (u.pathname === '/v1/checkout/sessions') {
+    const email = u.searchParams.get('customer_details[email]'), link = u.searchParams.get('payment_link'), status = u.searchParams.get('status');
+    const data = Object.values(SESSIONS).filter((x) => x.customer_details.email === email && (!link || x.payment_link === link) && (!status || x.status === status));
+    return reply(200, { object: 'list', data });
+  }
+  return reply(404, {});
+}
+let core = null;
+
 function serve() {
   return new Promise((resolve) => {
     const srv = http.createServer((req, res) => {
       let p = decodeURIComponent(req.url.split('?')[0]);
+      if (p === '/api/unlock') {
+        const chunks = [];
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', async () => {
+          const r = await core.handle(new Request('http://x/api/unlock', { method: req.method, headers: { 'content-type': 'application/json' }, body: req.method === 'POST' ? Buffer.concat(chunks) : undefined }), ENV, stripeStandIn);
+          res.writeHead(r.status, { 'content-type': 'application/json' });
+          res.end(await r.text());
+        });
+        return;
+      }
       if (p === '/') p = '/index.html';
       const f = path.join(SITE, p);
       if (!f.startsWith(SITE) || !fs.existsSync(f)) { res.writeHead(404); res.end('not found'); return; }
@@ -42,9 +76,11 @@ if (CODE) {
   for (const q of all) answers.set(q.q, q.opts[0]);
   fullCount = all.length;
   fs.rmSync(tmp, { recursive: true, force: true });
+  ENV.CONTENT_KEY = execFileSync('node', [path.join(__dirname, 'bank.mjs'), 'key', '--code', CODE]).toString().trim();
 }
 
 (async () => {
+  core = await import(require('url').pathToFileURL(path.resolve(__dirname, '..', 'server', 'unlock-core.mjs')).href);
   const srv = await serve();
   const base = 'http://127.0.0.1:' + srv.address().port + '/';
   const browser = await chromium.launch();
@@ -295,6 +331,79 @@ if (CODE) {
     st = await state(page);
     check('the unlock is kept for the next visit', !!st.unlock);
     await ctx.close();
+
+    // ---- online payment: back from the payment page with the id of the payment
+    console.log('online payment');
+    ({ ctx, page } = await fresh());
+    await page.goto(base + '?paid=cs_live_PAID00000001');
+    await page.waitForSelector('text=付款成功', { timeout: 20000 });
+    st = await state(page);
+    const issued = st.unlock.code;
+    check('a paid payment unlocks by itself and gives a code', /^[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}$/.test(issued) && st.pending === null, issued);
+    check('the payment id is removed from the address bar', !/paid=/.test(page.url()), page.url());
+    check('the code is shown to the buyer', (await page.locator('.code').innerText()).trim() === issued);
+    await shot(page, '20-paid');
+    await page.reload();
+    await page.goto(base + '#home');
+    await page.locator('[data-a="target"][data-v="csp"]').first().click();
+    await page.waitForSelector('.themes');
+    check('still unlocked after reload, without asking the payment service again', await page.locator('.pay').count() === 0);
+    await ctx.close();
+
+    ({ ctx, page } = await fresh());
+    await page.goto(base + '#unlock');
+    await page.fill('#code', issued);
+    await page.locator('#codeform button').click();
+    await page.waitForSelector('text=已解锁全部题目', { timeout: 20000 });
+    check('the issued code unlocks another device', true);
+    await ctx.close();
+
+    ({ ctx, page } = await fresh());
+    await page.goto(base + '#unlock');
+    await page.fill('#mail', 'nobody@example.com');
+    await page.locator('#mailform button').click();
+    await page.waitForSelector('#mailform .msg.bad');
+    check('an unknown email finds nothing', /没有找到/.test(await page.locator('#mailform .msg.bad').innerText()));
+    await page.fill('#mail', ' Buyer@Example.com ');
+    await page.locator('#mailform button').click();
+    await page.waitForSelector('text=已解锁全部题目', { timeout: 20000 });
+    st = await state(page);
+    check('the payment email recovers the same code', st.unlock.code === issued, st.unlock.code);
+    await ctx.close();
+
+    ({ ctx, page } = await fresh());
+    await page.goto(base + '?paid=cs_live_PROC00000001');
+    await page.waitForSelector('[data-a="pay-retry"]');
+    check('a payment still being processed says so and stays locked', /处理中/.test(await page.locator('.msg.bad').first().innerText()) && !(await state(page)).unlock);
+    await shot(page, '21-pending');
+    await page.reload();
+    await page.waitForSelector('[data-a="pay-retry"]');
+    check('the pending payment is remembered after a reload', (await state(page)).pending === 'cs_live_PROC00000001');
+    SESSIONS.cs_live_PROC00000001.payment_status = 'paid';
+    await page.locator('[data-a="pay-retry"]').click();
+    await page.waitForSelector('text=付款成功', { timeout: 20000 });
+    check('"confirm again" unlocks once the payment has gone through', !!(await state(page)).unlock);
+    await ctx.close();
+
+    for (const [id, why] of [['cs_live_FORGED000001', 'an invented payment id'], ['cs_test_PAID00000001', 'a test-mode payment'], ['cs_live_OTHER0000001', 'a payment for something else']]) {
+      ({ ctx, page } = await fresh());
+      await page.goto(base + '?paid=' + id);
+      await page.waitForSelector('.msg.bad', { timeout: 20000 });
+      st = await state(page);
+      check(why + ' does not unlock', !st.unlock && st.pending === null, JSON.stringify(st.unlock));
+      await ctx.close();
+    }
+    {
+      const call = async (body, env) => (await core.handle(new Request('http://x/api/unlock', { method: 'POST', body: JSON.stringify(body) }), env || ENV, stripeStandIn));
+      const bare = issued.replace(/-/g, '');
+      const forged = bare.slice(0, 11) + (bare[11] === '2' ? '3' : '2');
+      check('a code with one wrong character is refused by the function', (await call({ code: forged })).status === 404);
+      check('a revoked code is refused', (await call({ code: issued }, Object.assign({}, ENV, { REVOKED: 'AAAA-BBBB-CCCC, ' + issued }))).status === 403);
+      check('the function refuses to work without its settings', (await call({ code: issued }, {})).status === 503);
+      check('a wrong Stripe key is reported as a service problem, not as "unpaid"', (await call({ session: 'cs_live_PAID00000001' }, Object.assign({}, ENV, { STRIPE_KEY: 'rk_wrong' }))).status === 502);
+      const leak = await (await call({ session: 'cs_live_FORGED000001' })).text();
+      check('refusals never contain the bank key', !leak.includes(ENV.CONTENT_KEY));
+    }
 
     ({ ctx, page } = await fresh());
     await page.goto(base + '?code=' + CODE);

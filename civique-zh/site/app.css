@@ -153,6 +153,8 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
 .field { display: flex; gap: 8px; }
 .field input { flex: 1 1 0; min-width: 0; min-height: 50px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--paper); color: var(--ink); padding: 8px 12px; font-family: var(--font-num); font-size: 17px; letter-spacing: .06em; text-transform: uppercase; }
 .field input::placeholder { letter-spacing: .04em; color: var(--ink2); opacity: .7; text-transform: none; }
+.field input.plain { font-family: var(--font-fr); font-size: 16px; letter-spacing: 0; text-transform: none; }
+.code { font-family: var(--font-num); font-weight: 700; font-size: 18px; letter-spacing: .04em; white-space: nowrap; }
 .msg { font-size: 14px; min-height: 1.4em; }
 .msg.bad { color: var(--bad); }
 .msg.ok { color: var(--ok); }

@@ -14,6 +14,8 @@ site/                 要上线的网页，整个文件夹直接部署
   config.js           价格、付款链接、联系方式（卖家自己改）
   data/free.json      免费试用题（明文）
   data/bank.json      完整题库（加密，需要解锁码才能打开）
+functions/api/unlock.js   付款后自动解锁的函数（Cloudflare Pages Functions）
+server/unlock-core.mjs    函数的全部逻辑，测试时直接调用
 tools/
   bank.mjs            生成题库、加解锁码、导出题库原文
   test.cjs            浏览器自动测试
@@ -33,15 +35,29 @@ cd site && python3 -m http.server 8080      # 打开 http://localhost:8080
 
 ## 上线
 
-把 `site/` 文件夹部署到任意静态托管（Cloudflare Pages、Netlify 等），构建命令留空，输出目录填 `civique-zh/site`。
+用 Cloudflare Pages（免费）。项目的根目录选 `civique-zh`，构建命令留空，输出目录是 `site`（`wrangler.toml` 里已经写好）。
+`functions/` 里的函数会自动部署成 `/api/unlock`，只有它会消耗函数额度，其余都是静态文件。
 
-## 收款和解锁
+没有函数的托管（或把整个网页打成一个文件时）也能用：把 `site/config.js` 里的 `api` 设为空字符串，此时只支持手动发放的解锁码。
 
-1. 在 Stripe 建一个 Payment Link，付款成功后的跳转地址填 `https://你的域名/?code=解锁码`。
-2. 把这个 Payment Link 填进 `site/config.js` 的 `payUrl`。
-3. 买家付款后被带回网站，自动解锁；也可以手动输入解锁码。直接收款（转账）的买家，发一个解锁码即可。
+## 网上收款，付款后自动解锁
 
-解锁码管理（都需要用一个已有的有效解锁码来证明身份）：
+1. 在 Stripe 建一个 Payment Link，“付款后”选跳转到自己的网站：`https://你的域名/?paid={CHECKOUT_SESSION_ID}`（花括号部分原样填写）。
+2. 把 Payment Link 的地址填进 `site/config.js` 的 `payUrl`。
+3. 在托管平台给函数设置两个密钥（不要写进仓库）：
+   - `STRIPE_KEY`：Stripe 的受限密钥，只勾选 Checkout Sessions 的读取权限；
+   - `CONTENT_KEY`：题库密钥，`node tools/bank.mjs key --code XXXX-XXXX-XXXX` 的输出。
+   可选：`PAYMENT_LINK`（`plink_...`，只认这一个收款链接的付款）、`REVOKED`（作废的解锁码，逗号分隔）。
+
+流程：买家付款后被带回网站，网页把这笔付款的编号交给 `/api/unlock`，函数向 Stripe 核实确已付款，
+返回题库密钥和一个属于这位买家的解锁码，浏览器随即解锁。换设备时输入解锁码，或者填付款邮箱找回。
+函数不保存任何数据：解锁码的前半段由付款编号算出，后半段是前半段的签名。
+
+访问 `https://你的域名/api/unlock` 会返回 `{"ok":true,"configured":true}`，可以用来确认函数和密钥已经就位。
+
+## 手动发放解锁码
+
+不经过网上付款的买家（赠送、线下收款）可以直接发一个码。以下命令都需要用一个已有的有效解锁码来证明身份：
 
 ```
 node tools/bank.mjs codes 50 --code XXXX-XXXX-XXXX     # 新增 50 个解锁码并打印
@@ -49,8 +65,8 @@ node tools/bank.mjs revoke <某个码> --code XXXX-XXXX-XXXX
 node tools/bank.mjs check --code XXXX-XXXX-XXXX        # 检查题库能否正常打开
 ```
 
-说明：题库在浏览器里解密，解锁码只能防君子。拿到解锁码的人可以转给别人；发现某个码被传开，
-撤销它并用 `build --new` 换一把密钥（其余买家需要重新输入自己的码）。
+说明：题库在浏览器里解密，解锁码只能防君子，拿到码的人可以转给别人。发现某个码被传开：手动发放的码用 `revoke` 撤销，
+付款后自动发放的码写进 `REVOKED`；如果要彻底换一把密钥，用 `build --new` 重新生成并更新 `CONTENT_KEY`（已购买的人需要重新解锁）。
 
 ## 修改题目
 
@@ -74,4 +90,5 @@ CIVIQUE_CODE=XXXX-XXXX-XXXX node tools/test.cjs
 ```
 
 需要 Node 18+ 和 Playwright（Chromium）。覆盖：首次进入、练习、错题本、试考、倒计时到点自动交卷、
-解锁（手动输入和付款跳转）、40 题模拟考试的题量分布、手机/桌面/深色模式下不出现横向滚动。
+解锁（手动输入、付款后自动解锁、邮箱找回、付款处理中、伪造的付款编号）、40 题模拟考试的题量分布、
+手机/桌面/深色模式下不出现横向滚动。付款相关的测试用的是真实的函数代码，只把它对 Stripe 的请求换成了测试数据。

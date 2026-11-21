@@ -29,7 +29,7 @@
   var mem = {};
   function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return mem[k] || null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { mem[k] = v; } }
-  function fresh() { return { target: '', zhOn: false, stats: {}, exams: [], sess: null, exam: null, unlock: null, marks: {} }; }
+  function fresh() { return { target: '', zhOn: false, stats: {}, exams: [], sess: null, exam: null, unlock: null, pending: null, marks: {} }; }
   var S = fresh();
   (function () {
     try { var o = JSON.parse(lsGet(LS) || 'null'); if (o && typeof o === 'object') for (var k in o) S[k] = o[k]; } catch (e) { /* start clean */ }
@@ -143,20 +143,47 @@
       return aesOpen(u.subarray(0, 32), b64d(entry.iv), b64d(entry.wk));
     });
   }
-  // resolves to 'ok' | 'format' | 'nocrypto' | 'network' | 'unknown'
+  // The site's own /api/unlock (only on deployments that have it) checks online payments and the codes it issued.
+  function ask(payload) {
+    if (!CFG.api) return Promise.resolve({ error: 'no_api' });
+    return fetch(CFG.api, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }).then(function (r) {
+      return r.json().catch(function () { return { error: 'server' }; });
+    }, function () { return { error: 'network' }; });
+  }
+  // resolves to 'ok' or the name of what went wrong
+  function unlockViaServer(payload) {
+    if (!subtle || !window.TextDecoder) return Promise.resolve('nocrypto');
+    return ask(payload).then(function (res) {
+      if (!res || !res.ok || !res.k) return (res && res.error) || 'server';
+      return loadBankFile().then(function (bank) {
+        return openBank(bank, b64d(res.k)).then(function () {
+          S.unlock = { code: res.code || '', k: res.k, built: bank.built || '' };
+          S.sess = null; S.pending = null; save(); ping('unlocked');
+          return 'ok';
+        }, function () { return 'server'; });
+      }, function () { return 'network'; });
+    });
+  }
+  // resolves to 'ok' | 'format' | 'nocrypto' | 'network' | 'unknown' | 'server'
   function unlockWithCode(raw) {
     var code = normCode(raw);
     if (!code) return Promise.resolve('format');
     if (!subtle || !window.TextDecoder) return Promise.resolve('nocrypto');
+    function online() {
+      if (!CFG.api) return 'unknown';
+      return unlockViaServer({ code: fmtCode(code) }).then(function (r) {
+        return r === 'ok' || r === 'network' ? r : (r === 'bad_code' || r === 'revoked' ? 'unknown' : 'server');
+      });
+    }
     return loadBankFile().then(function (bank) {
       return keyFromCode(bank, code).then(function (K) {
-        if (!K) return 'unknown';
+        if (!K) return online();
         return openBank(bank, K).then(function () {
           S.unlock = { code: fmtCode(code), k: b64e(K), built: bank.built || '' };
-          S.sess = null; save(); ping('unlocked');
+          S.sess = null; S.pending = null; save(); ping('unlocked');
           return 'ok';
         });
-      }, function () { return 'unknown'; });
+      }, function () { return online(); });
     }, function () { return 'network'; });
   }
   function restoreUnlock() {
@@ -167,6 +194,7 @@
         // the bank key changed since this device unlocked: try the stored code again
         return unlockWithCode(S.unlock.code).then(function (r) {
           if (r === 'unknown') { S.unlock = null; save(); ui.revoked = true; }
+          else if (r !== 'ok') ui.netFail = true;
         });
       });
     }, function () { ui.netFail = true; });
@@ -182,10 +210,45 @@
       location.hash = 'unlock';
     });
   }
+  // back from the payment page: Stripe adds the id of the payment to the address
+  function paidFromUrl() {
+    var m = /[?&](?:paid|session_id)=(cs_[A-Za-z0-9_]{8,220})/.exec(location.search || '');
+    if (m) {
+      S.pending = m[1]; save();
+      try { history.replaceState(null, '', location.pathname + (location.hash || '')); } catch (e) { /* keep the url */ }
+    }
+    if (!S.pending) return Promise.resolve();
+    if (unlocked()) { S.pending = null; save(); return Promise.resolve(); }
+    return confirmPayment();
+  }
+  function confirmPayment() {
+    return unlockViaServer({ session: S.pending }).then(function (r) {
+      if (r === 'not_paid' || r === 'not_found') { S.pending = null; save(); }
+      ui.msg = r === 'ok' ? { ok: true, text: '付款成功，全部题目已开放。' } : { ok: false, text: payError(r), at: 'pay' };
+      if (route() === 'unlock') render(true); else location.hash = 'unlock';
+    });
+  }
+  function payError(r) {
+    if (r === 'pending') return '付款还在处理中。请等一两分钟，再点“重新确认”。';
+    if (r === 'not_paid') return '这笔付款没有完成，不会扣款。需要的话可以重新付款。';
+    if (r === 'not_found') return '没有找到这笔付款记录。如果你已经付款，请用下面的“找回解锁码”。';
+    if (r === 'network') return '网络不通，暂时无法确认付款。请检查网络后点“重新确认”，不用再付一次。';
+    if (r === 'nocrypto') return '当前浏览器不支持解锁，请点右上角用 Safari 或 Chrome 打开本页面。';
+    return '暂时无法确认付款。请稍后点“重新确认”，不用再付一次。';
+  }
+  function mailError(r) {
+    if (r === 'bad_email') return '邮箱格式不对，请检查后再试。';
+    if (r === 'not_found' || r === 'not_paid') return '没有找到这个邮箱的付款记录。请填付款时用的那个邮箱。';
+    if (r === 'network') return '网络不通，请检查网络后重试。';
+    if (r === 'nocrypto') return '当前浏览器不支持解锁，请点右上角用 Safari 或 Chrome 打开本页面。';
+    return '找回服务暂时不可用，请稍后再试。';
+  }
+  function payHref() { var u = String(CFG.payUrl || ''); return u + (u.indexOf('?') < 0 ? '?' : '&') + 'locale=zh'; }
   function codeError(r) {
     if (r === 'format') return '解锁码是 12 位字母和数字，例如 ABCD-2345-EFGH，请检查后再试。';
-    if (r === 'unknown') return '这个解锁码不对或已失效，请核对后再试，或联系卖家。';
+    if (r === 'unknown') return '这个解锁码不对或已失效，请核对后再试' + (CFG.contact ? '，或联系 ' + CFG.contact : '') + '。';
     if (r === 'nocrypto') return '当前浏览器不支持解锁，请点右上角用 Safari 或 Chrome 打开本页面。';
+    if (r === 'server') return '解锁服务暂时不可用，请稍后再试。';
     return '题库没有加载出来，请检查网络后重试。';
   }
   function sanitize() {
@@ -569,19 +632,23 @@
     var out = '<main class="wrap">' + brand();
     if (unlocked()) {
       return out + '<section class="stack"><h2>已解锁全部题目</h2>' + (ui.msg ? '<p class="msg ok">' + esc(ui.msg.text) + '</p>' : '') +
-        '<p class="note blue">这台设备已经解锁。换手机或换浏览器时，输入同一个解锁码即可。<br>你的解锁码：<b class="num">' + esc(S.unlock ? S.unlock.code : '') + '</b></p><a class="btn wide" href="#home">回首页</a></section></main>' + tabs('home');
+        '<p class="note blue">这台设备已经解锁。换手机或换浏览器时，输入同一个解锁码即可' + (CFG.api ? '，也可以用付款时的邮箱找回' : '') + '。<br>你的解锁码：<b class="code">' + esc(S.unlock ? S.unlock.code : '') + '</b><br>建议现在截图保存。</p><a class="btn wide" href="#home">回首页</a></section></main>' + tabs('home');
     }
-    var t = S.target ? totals() : null;
+    var t = S.target ? totals() : null, at = ui.msg ? (ui.msg.at || 'code') : '';
+    function msg(where) { return '<p class="msg ' + (at === where ? (ui.msg.ok ? 'ok' : 'bad') : '') + '" role="status">' + (at === where ? esc(ui.msg.text) : '') + '</p>'; }
+    if (S.pending || at === 'pay') out += '<section class="stack"><h2>' + (S.pending ? '正在确认你的付款' : '付款没有确认') + '</h2>' + msg('pay') +
+      (S.pending ? '<button class="btn wide" data-a="pay-retry"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '确认中' : '重新确认') + '</button>' : '') + '</section>';
     out += '<section class="pay"><h2>解锁全部题目</h2><ul>' +
       '<li>多年居留卡和十年居留卡两套官方知识题，共 <span class="num">' + DB.free.meta.total + '</span> 题（含情景练习题），逐题中文翻译和讲解</li>' +
       '<li>完整模拟考试：40 题、45 分钟、32 题及格，可以反复考</li>' +
       '<li>错题本、生词表全部开放</li><li>一次付款，长期使用，题目更正和补充不再收费</li></ul>' +
       '<div class="price">' + esc(CFG.price || '') + '<small>一次性付款</small></div>' +
-      (CFG.payUrl ? '<a class="btn wide" href="' + esc(CFG.payUrl) + '" target="_blank" rel="noopener">去付款</a><p class="small">付款完成后会自动回到本站并解锁。如果没有自动解锁，把收到的解锁码填在下面。</p>'
+      (CFG.payUrl ? '<a class="btn wide" href="' + esc(payHref()) + '">去付款</a><p class="small">支持银行卡等方式，付款页面由 Stripe 提供，本站不接触你的卡号。付款完成后会自动回到本站并解锁，同时给你一个解锁码，换设备时用。</p>'
         : '<p class="small">' + (CFG.contact ? '购买请联系：' + esc(CFG.contact) + '。付款后会收到一个解锁码。' : '付款后会收到一个解锁码，填在下面即可。') + '</p>') +
       '</section>';
     out += '<section class="stack"><h2>已经有解锁码</h2><form id="codeform" class="stack"><div class="field"><input id="code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="例如 ABCD-2345-EFGH" aria-label="解锁码" maxlength="20"><button class="btn" type="submit"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '解锁中' : '解锁') + '</button></div>' +
-      '<p class="msg ' + (ui.msg ? (ui.msg.ok ? 'ok' : 'bad') : '') + '" role="status">' + (ui.msg ? esc(ui.msg.text) : '') + '</p></form></section>';
+      msg('code') + '</form></section>';
+    if (CFG.api) out += '<section class="stack"><h2>找回解锁码</h2><p class="small">付过款，但换了手机或找不到解锁码：填付款时用的邮箱。</p><form id="mailform" class="stack"><div class="field"><input id="mail" class="plain" name="mail" type="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="付款时填写的邮箱" aria-label="付款邮箱" maxlength="120"><button class="btn" type="submit"' + (ui.busy ? ' disabled' : '') + '>找回</button></div>' + msg('mail') + '</form></section>';
     out += '<section class="stack"><p class="small">官方的备考资料是免费的，不付款也可以在内政部网站上看到全部法语题目和讲义。这里收费的是中文翻译、讲解和练习工具。' + (t ? '免费试用部分开放 ' + t.have + ' 题，可以先试再决定。' : '') + '</p></section>';
     return out + '</main>' + tabs('home');
   }
@@ -675,6 +742,11 @@
       render();
     },
     'exam-quit-yes': function () { S.exam = null; ui.modal = null; save(); render(true); },
+    'pay-retry': function () {
+      if (!S.pending || ui.busy) return;
+      ui.busy = true; ui.msg = null; render();
+      confirmPayment().then(function () { ui.busy = false; render(); });
+    },
     'result-show': function (v) { ui.resultIdx = Number(v); ui.open = {}; go('result'); },
     open: function (v) { ui.open[v] = !ui.open[v]; render(); },
     reset: function () {
@@ -692,6 +764,20 @@
     ACT[a](el.getAttribute('data-v'), el, ev);
   });
   document.addEventListener('submit', function (ev) {
+    if (ev.target.id === 'mailform') {
+      ev.preventDefault();
+      if (ui.busy) return;
+      var mail = ((document.getElementById('mail') || {}).value || '').trim();
+      ui.busy = true; ui.msg = null; render();
+      var box = document.getElementById('mail'); if (box) box.value = mail;
+      unlockViaServer({ email: mail }).then(function (r) {
+        ui.busy = false;
+        ui.msg = r === 'ok' ? { ok: true, text: '已找回，全部题目已开放。' } : { ok: false, text: mailError(r), at: 'mail' };
+        render();
+        var again = document.getElementById('mail'); if (again && r !== 'ok') again.value = mail;
+      });
+      return;
+    }
     if (ev.target.id !== 'codeform') return;
     ev.preventDefault();
     if (ui.busy) return;
@@ -720,7 +806,7 @@
   }
   try { document.documentElement.lang = 'zh-CN'; } catch (e) { /* not essential */ }
   fonts();
-  loadFree().then(restoreUnlock).then(codeFromUrl).then(function () {
+  loadFree().then(restoreUnlock).then(codeFromUrl).then(paidFromUrl).then(function () {
     sanitize(); save(); render(true);
   }).catch(function () {
     app.innerHTML = '<main class="wrap"><h1>公民考试中文题库</h1><p class="note warn">题目没有加载出来。请检查网络后刷新页面。</p></main>';

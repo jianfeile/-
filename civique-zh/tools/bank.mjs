@@ -8,6 +8,7 @@
 //   node tools/bank.mjs revoke <code> --code XXXX-XXXX-XXXX   remove one code (existing devices keep working until the key is rotated with build --new)
 //   node tools/bank.mjs export --code XXXX-XXXX-XXXX [--out <dir>]
 //   node tools/bank.mjs check  --code XXXX-XXXX-XXXX
+//   node tools/bank.mjs key    --code XXXX-XXXX-XXXX          print the bank key (the CONTENT_KEY secret of the unlock function)
 //
 // No dependencies; needs Node 18+.
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
@@ -205,6 +206,9 @@ if (cmd === 'build') {
   delete bank.keys[id];
   writeFileSync(BANK, JSON.stringify(bank));
   console.log('revoked; ' + Object.keys(bank.keys).length + ' codes remain');
+} else if (cmd === 'key') {
+  const bank = loadBank();
+  console.log(b64(contentKey(bank, opt('code'))));
 } else if (cmd === 'export' || cmd === 'check') {
   const bank = loadBank();
   const K = contentKey(bank, opt('code'));
@@ -222,5 +226,5 @@ if (cmd === 'build') {
     console.log(`exported ${items.length} questions to ${out}`);
   }
 } else if (import.meta.url === 'file://' + process.argv[1]) {
-  console.log('commands: build | codes | revoke | export | check   (see the header of this file)');
+  console.log('commands: build | codes | revoke | export | check | key   (see the header of this file)');
 }

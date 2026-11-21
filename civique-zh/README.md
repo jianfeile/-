@@ -1,6 +1,7 @@
 # 公民考试中文题库
 
-法国居留公民考试（examen civique）的中文练习网页：法语原题，逐题中文翻译和讲解，模拟考试，错题本，生词表。
+法国公民考试（examen civique：多年居留卡、十年居留卡、入籍）的中文练习网页：法语原题，逐题中文翻译和讲解，
+中文考点速记，考生回忆（机经），模拟考试，错题本，生词表。
 纯静态网页，没有服务器，没有依赖，手机上直接打开（微信内置浏览器可用）。
 
 本项目不是官方网站。知识题题干来自法国内政部公布的官方清单（formation-civique.interieur.gouv.fr，
@@ -13,7 +14,8 @@ site/                 要上线的网页，整个文件夹直接部署
   index.html app.css app.js
   config.js           价格、付款链接、联系方式（卖家自己改）
   data/free.json      免费试用题（明文）
-  data/bank.json      完整题库（加密，需要解锁码才能打开）
+  data/bank.json      完整题库和考点速记（加密，需要解锁码才能打开）
+  sw.js               离线缓存：打开过一次后，没有网络也能用
 functions/api/unlock.js   付款后自动解锁的函数（Cloudflare Pages Functions）
 server/unlock-core.mjs    函数的全部逻辑，测试时直接调用
 tools/
@@ -80,6 +82,18 @@ CIVIQUE_CODE=XXXX-XXXX-XXXX node tools/test.cjs        # 跑一遍测试
 每道题的格式：`id`、`theme`（principes / institutions / droits / histoire / societe）、`levels`（csp、cr）、
 `kind`（connaissance / situation）、`q` 法语题干、`qz` 中文题干、`opts` 四个法语选项（**第一个永远是正确答案**，
 显示时会打乱）、`optsz` 对应中文、`explain` 中文讲解、`vocab` 生词、`src` 对照的官方讲义。
+
+### 考点速记和机经
+
+除了题目，`content/` 里还可以放两个文件，`build` 时一起打包：
+
+- `cards.json`：考点速记。每张卡片 `id`、`theme`、`title`、`lead`（一句话说明）、`points`（要点）、`terms`（生词）、`src`（对照的官方讲义）。
+  每个主题的第一张免费（可用 `free_cards.json` 指定），其余在加密题库里，免费用户只看到标题。
+- `recall.json`：机经，也就是考生在网上分享的考后回忆。每场考试一条：`when`（考试年月，如 `2026-10`）、`level`（csp / cr / nat，可省略）、
+  `note`（一句话印象，可省略）、`items`。`items` 里每一项要么是 `{ "ref": "题目编号" }`（对应题库里的一道题），
+  要么是 `{ "text": "中文描述", "kind": "situation", "theme": "droits" }`（题库里还没有的题）。
+  **只记录考试时间和考了什么，不写任何账号、昵称或链接**（文件里出现 `@`、网址等内容时 `build` 会直接报错）。
+  机经列表对所有人可见，题目的讲解仍然需要解锁。
 
 免费试用题由 `content/free_ids.json` 决定（首次生成时自动挑选：每个主题每种居留卡 6 道知识题，外加每个有情景题的主题 3 道）。
 

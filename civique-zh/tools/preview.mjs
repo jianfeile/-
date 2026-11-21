@@ -17,7 +17,7 @@ const page = [
   '<meta name="claude:viewport-fit-sides" content="cover">',
   '<style>\n' + read('app.css') + '</style>',
   landing,
-  '<script>\n' + safe(read('config.js')) + 'window.CIVIQUE_CONFIG.api = \'\';\n</script>',   // no function next to a one-file page
+  '<script>\n' + safe(read('config.js')) + 'window.CIVIQUE_CONFIG.api = \'\'; window.CIVIQUE_CONFIG.offline = false;\n</script>',   // no function next to a one-file page
   '<script>window.CIVIQUE_FREE = ' + safe(JSON.stringify(JSON.parse(read('data/free.json')))) + ';</script>',
   '<script>\n' + safe(read('app.js')) + '</script>',
 ].join('\n');

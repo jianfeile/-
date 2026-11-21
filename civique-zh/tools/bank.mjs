@@ -23,9 +23,10 @@ const FREE = join(DATA, 'free.json');
 const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const ITER = 150000;
 const THEMES = ['principes', 'institutions', 'droits', 'histoire', 'societe'];
-const LEVELS = ['csp', 'cr'];
-// free sample: knowledge questions per theme and per level, situational questions per theme
-const FREE_K = 6, FREE_S = 3;
+const LEVELS = ['csp', 'cr', 'nat'];
+// free sample: knowledge questions per theme and per level, situational questions per theme, study cards per theme
+const FREE_K = 6, FREE_S = 3, FREE_CARDS = 1;
+const SKIP = ['free_ids.json', 'sources.json', 'cards.json', 'recall.json', 'free_cards.json'];
 
 const args = process.argv.slice(2);
 const cmd = args[0];
@@ -81,7 +82,7 @@ function loadContent(dir) {
   if (!existsSync(dir)) die('content folder not found: ' + dir);
   const items = [];
   for (const f of readdirSync(dir).sort()) {
-    if (!f.endsWith('.json') || f === 'free_ids.json' || f === 'sources.json') continue;
+    if (!f.endsWith('.json') || SKIP.includes(f)) continue;
     const arr = JSON.parse(readFileSync(join(dir, f), 'utf8'));
     if (!Array.isArray(arr)) die(f + ': expected an array');
     items.push(...arr);
@@ -119,8 +120,8 @@ function pickFree(items, dir) {
   const free = new Set();
   for (const t of THEMES) {
     const know = items.filter((it) => it.theme === t && it.kind === 'connaissance').sort((a, b) => rank(a.id).localeCompare(rank(b.id)));
-    // questions valid for both cards first: they serve both audiences
-    for (const it of know.filter((x) => x.levels.length === 2).slice(0, FREE_K)) free.add(it.id);
+    // questions shared by several exams first: they serve several audiences at once
+    for (const it of know.filter((x) => x.levels.length >= 2).sort((a, b) => b.levels.length - a.levels.length).slice(0, FREE_K)) free.add(it.id);
     for (const lv of LEVELS) {
       let have = know.filter((x) => free.has(x.id) && x.levels.includes(lv)).length;
       for (const it of know) { if (have >= FREE_K) break; if (!free.has(it.id) && it.levels.includes(lv)) { free.add(it.id); have++; } }
@@ -143,6 +144,56 @@ function counts(items) {
   return c;
 }
 
+// study cards: content/cards.json = [{ id, theme, title, lead, points[], terms[[fr, zh]], src[] }]
+function loadCards(dir) {
+  const f = join(dir, 'cards.json');
+  if (!existsSync(f)) return [];
+  const cards = JSON.parse(readFileSync(f, 'utf8'));
+  const errs = [], seen = new Set();
+  for (const c of cards) {
+    const bad = (m) => errs.push((c.id || '?') + ': ' + m);
+    if (!c.id || seen.has(c.id)) bad('missing or duplicate id');
+    seen.add(c.id);
+    if (!THEMES.includes(c.theme)) bad('theme');
+    if (typeof c.title !== 'string' || !zh.test(c.title)) bad('title');
+    if (typeof c.lead !== 'string') bad('lead');
+    if (!Array.isArray(c.points) || !c.points.length || c.points.some((x) => typeof x !== 'string' || !zh.test(x))) bad('points');
+    if (!Array.isArray(c.terms) || c.terms.some((v) => !Array.isArray(v) || v.length !== 2)) bad('terms');
+    if (!Array.isArray(c.src)) bad('src');
+  }
+  if (errs.length) { errs.slice(0, 30).forEach((e) => console.error('  ' + e)); die(errs.length + ' card errors'); }
+  return cards.map((c, i) => ({ c, i })).sort((a, b) => THEMES.indexOf(a.c.theme) - THEMES.indexOf(b.c.theme) || a.i - b.i).map((x) => x.c);
+}
+// recollections of real sessions: content/recall.json = [{ when: "YYYY-MM", level?, note?, items: [{ ref: "<question id>", like? } | { text, kind?, theme? }] }]
+// No names, accounts or links: only the month, the exam and what was asked.
+function loadRecall(dir, items) {
+  const f = join(dir, 'recall.json');
+  if (!existsSync(f)) return [];
+  const by = new Map(items.map((it) => [it.id, it]));
+  const sessions = JSON.parse(readFileSync(f, 'utf8'));
+  const errs = [];
+  sessions.forEach((r, n) => {
+    const bad = (m) => errs.push('recall #' + (n + 1) + ': ' + m);
+    if (!/^20\d\d-(0[1-9]|1[0-2])$/.test(r.when || '')) bad('when must be YYYY-MM');
+    if (r.level && !LEVELS.includes(r.level)) bad('level');
+    if (!Array.isArray(r.items) || !r.items.length) bad('items');
+    for (const x of r.items || []) {
+      if (x.ref ? !by.has(x.ref) : !(typeof x.text === 'string' && zh.test(x.text))) bad('item needs a known ref or a Chinese text: ' + JSON.stringify(x).slice(0, 60));
+      if (!x.ref && x.theme && !THEMES.includes(x.theme)) bad('theme');
+    }
+    if (/@|https?:|xhs|小红书号|微信号/i.test(JSON.stringify(r))) bad('must not contain accounts or links');
+  });
+  if (errs.length) { errs.slice(0, 30).forEach((e) => console.error('  ' + e)); die(errs.length + ' recall errors'); }
+  return sessions.slice().sort((a, b) => b.when.localeCompare(a.when)).map((r) => ({
+    w: r.when, l: r.level || '', n: r.note || '',
+    i: r.items.map((x) => {
+      if (!x.ref) return { x: x.text, k: x.kind === 'situation' ? 's' : 'c', t: x.theme || '' };
+      const it = by.get(x.ref);
+      return Object.assign({ r: it.id, q: it.q, k: it.kind === 'situation' ? 's' : 'c', t: it.theme }, x.like ? { like: 1 } : {});
+    }),
+  }));
+}
+
 // ---------- commands ----------
 if (cmd === 'build') {
   const dir = resolve(opt('content') || join(ROOT, 'content'));
@@ -150,7 +201,9 @@ if (cmd === 'build') {
   // optional table of official source sheets: content/sources.json = { "<file name used in src>": ["title", "url"] }
   const srcFile = join(dir, 'sources.json');
   const sources = existsSync(srcFile) ? JSON.parse(readFileSync(srcFile, 'utf8')) : {};
-  const used = [...new Set(items.map((it) => it.src).filter((s) => sources[s]))].sort();
+  const cards = loadCards(dir);
+  const recall = loadRecall(dir, items);
+  const used = [...new Set(items.map((it) => it.src).concat(...cards.map((c) => c.src)).filter((s) => sources[s]))].sort();
   const srcIndex = new Map(used.map((s, i) => [s, i]));
   const srcTable = used.map((s) => sources[s]);
   const freeIds = pickFree(items, dir);
@@ -164,7 +217,12 @@ if (cmd === 'build') {
     K = contentKey(bank, opt('code'));
   }
   const all = items.map((it) => compact(it, srcIndex));
-  const sealed = seal(K, Buffer.from(JSON.stringify({ qs: all, src: srcTable }), 'utf8'));
+  const allCards = cards.map((c) => ({ id: c.id, t: c.theme, title: c.title, lead: c.lead, p: c.points, v: c.terms, s: c.src.filter((x) => srcIndex.has(x)).map((x) => srcIndex.get(x)) }));
+  let freeCards = new Set();
+  const fc = join(dir, 'free_cards.json');
+  if (existsSync(fc)) freeCards = new Set(JSON.parse(readFileSync(fc, 'utf8')));
+  else for (const t of THEMES) allCards.filter((c) => c.t === t).slice(0, FREE_CARDS).forEach((c) => freeCards.add(c.id));
+  const sealed = seal(K, Buffer.from(JSON.stringify({ qs: all, src: srcTable, cards: allCards }), 'utf8'));
   bank.iv = sealed.iv; bank.ct = sealed.ct; bank.n = all.length;
   const today = new Date().toISOString().slice(0, 10);
   bank.built = today;
@@ -173,17 +231,21 @@ if (cmd === 'build') {
   if (!consulted) consulted = today;
   const freeQs = all.filter((q) => freeIds.has(q.id));
   // the free file carries its own small source table
-  const freeSrcIdx = [...new Set(freeQs.map((q) => q.s).filter((s) => s !== undefined))];
+  const freeSrcIdx = [...new Set(freeQs.map((q) => q.s).filter((s) => s !== undefined).concat(...allCards.filter((c) => freeCards.has(c.id)).map((c) => c.s)))];
   const free = {
     v: 1, built: today, consulted,
     meta: { counts: counts(items), total: all.length, free: freeQs.length },
     src: freeSrcIdx.map((i) => srcTable[i]),
     qs: freeQs.map((q) => (q.s === undefined ? q : { ...q, s: freeSrcIdx.indexOf(q.s) })),
+    // free cards in full, the others as a title only (x: locked, n: number of points)
+    cards: allCards.map((c) => (freeCards.has(c.id) ? { ...c, s: c.s.map((i) => freeSrcIdx.indexOf(i)) } : { id: c.id, t: c.t, title: c.title, lead: c.lead, x: 1, n: c.p.length })),
+    recall,
   };
+  free.meta.cards = allCards.length;
   mkdirSync(DATA, { recursive: true });
   writeFileSync(BANK, JSON.stringify(bank));
   writeFileSync(FREE, JSON.stringify(free));
-  console.log(`built: ${all.length} questions (${freeQs.length} free), ${Object.keys(bank.keys).length} code(s) valid`);
+  console.log(`built: ${all.length} questions (${freeQs.length} free), ${allCards.length} study cards (${freeCards.size} free), ${recall.length} recalled sessions, ${Object.keys(bank.keys).length} code(s) valid`);
   for (const lv of LEVELS) console.log('  ' + lv + ': ' + THEMES.map((t) => `${t} ${free.meta.counts[lv][t].c}+${free.meta.counts[lv][t].s}`).join(', '));
   if (firstCode) console.log('FIRST UNLOCK CODE (keep it private, it is needed for every later command): ' + firstCode);
 } else if (cmd === 'codes') {
@@ -222,7 +284,14 @@ if (cmd === 'build') {
     writeFileSync(join(out, 'all.json'), JSON.stringify(items, null, 1));
     const sources = {}; for (const s of data.src || []) sources[s[1]] = s;
     writeFileSync(join(out, 'sources.json'), JSON.stringify(sources, null, 1));
-    if (existsSync(FREE)) writeFileSync(join(out, 'free_ids.json'), JSON.stringify(JSON.parse(readFileSync(FREE, 'utf8')).qs.map((q) => q.id).sort(), null, 1));
+    const url = (i) => ((data.src || [])[i] || [])[1] || '';
+    if ((data.cards || []).length) writeFileSync(join(out, 'cards.json'), JSON.stringify(data.cards.map((c) => ({ id: c.id, theme: c.t, title: c.title, lead: c.lead, points: c.p, terms: c.v, src: (c.s || []).map(url).filter(Boolean) })), null, 1));
+    if (existsSync(FREE)) {
+      const fr = JSON.parse(readFileSync(FREE, 'utf8'));
+      writeFileSync(join(out, 'free_ids.json'), JSON.stringify(fr.qs.map((q) => q.id).sort(), null, 1));
+      if ((fr.cards || []).length) writeFileSync(join(out, 'free_cards.json'), JSON.stringify(fr.cards.filter((c) => !c.x).map((c) => c.id), null, 1));
+      if ((fr.recall || []).length) writeFileSync(join(out, 'recall.json'), JSON.stringify(fr.recall.map((r) => Object.assign({ when: r.w }, r.l ? { level: r.l } : {}, r.n ? { note: r.n } : {}, { items: r.i.map((x) => (x.r ? Object.assign({ ref: x.r }, x.like ? { like: true } : {}) : Object.assign({ text: x.x, kind: x.k === 's' ? 'situation' : 'connaissance' }, x.t ? { theme: x.t } : {}))) })), null, 1));
+    }
     console.log(`exported ${items.length} questions to ${out}`);
   }
 } else if (import.meta.url === 'file://' + process.argv[1]) {

@@ -86,7 +86,7 @@ if (CODE) {
   const browser = await chromium.launch();
   const errors = [];
   async function fresh(opts) {
-    const ctx = await browser.newContext(Object.assign({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 1, locale: 'zh-CN' }, opts || {}));
+    const ctx = await browser.newContext(Object.assign({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 1, locale: 'zh-CN', serviceWorkers: 'block' }, opts || {}));
     const page = await ctx.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.g|ERR_|Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -113,7 +113,7 @@ if (CODE) {
   let { ctx, page } = await fresh();
   await page.goto(base);
   await page.waitForSelector('[data-a="target"]');
-  check('asks which card on first visit', await page.locator('text=你要申请哪一种居留卡').count() === 1);
+  check('asks which exam on first visit, with every exam the bank has', await page.locator('text=你准备申请哪一种').count() === 1 && await page.locator('[data-a="target"]').count() === Object.keys(free.meta.counts).length);
   check('no sideways scroll at 390px', await noOverflow(page));
   await shot(page, '01-choose');
   await page.locator('[data-a="target"][data-v="csp"]').click();
@@ -167,7 +167,7 @@ if (CODE) {
   check('mistake opens with explanation', await page.locator('.detail .copy').count() === 1);
   await shot(page, '07-mistakes');
   await page.locator('[data-a="start"][data-v="all|wrong"]').click();
-  await page.waitForSelector('.stem');
+  await page.waitForSelector('.qbar .back');
   await answer(page, true);
   st = await state(page);
   const wrongId = Object.keys(st.stats).find((k) => st.stats[k][3] > 0);
@@ -223,6 +223,27 @@ if (CODE) {
   await page.waitForSelector('.facts');
   check('about page renders', await page.locator('text=关于公民考试').count() === 1);
   await shot(page, '13-about');
+  // study cards (locked)
+  await page.goto(base + '#cards');
+  await page.waitForSelector('main');
+  if (free.cards && free.cards.length) {
+    const openable = free.cards.filter((c) => !c.x).length, lockedCards = free.cards.length - openable;
+    check('study cards: every card is listed', await page.locator('.crow').count() === free.cards.length);
+    await page.locator('.crow[data-a="open"]').first().click();
+    check('a free study card opens with its points and the official sheet link', await page.locator('.detail .facts li').count() >= 3 && await page.locator('.detail a[href^="https://formation-civique"]').count() >= 1);
+    check('no sideways scroll on an open study card', await noOverflow(page));
+    await shot(page, '22-cards');
+    if (lockedCards) {
+      await page.locator('.crow[data-a="locked"]').first().click();
+      check('a locked study card offers to unlock', await page.locator('.sheet [data-a="goto"][data-v="unlock"]').count() === 1);
+      await page.locator('.sheet [data-a="close"]').click();
+    }
+  } else check('study cards: says they are being prepared', await page.locator('text=正在整理中').count() === 1);
+  await page.goto(base + '#recall');
+  await page.waitForSelector('main');
+  if (!(free.recall || []).length) check('recollections: honest empty state when none are collected', await page.locator('text=还没有收录').count() === 1);
+  await shot(page, '23-recall-real');
+
   await page.goto(base + '#unlock');
   await page.waitForSelector('#code');
   await shot(page, '14-unlock');
@@ -251,6 +272,13 @@ if (CODE) {
     await page.goto(base + '#home');
     await page.waitForSelector('.themes');
     check('home says unlocked and hides the offer', await page.locator('.pay').count() === 0 && await page.locator('text=已解锁全部题目').count() === 1);
+    if (free.cards && free.cards.length) {
+      await page.goto(base + '#cards');
+      await page.waitForSelector('.crow');
+      check('unlocked: every study card can be opened', await page.locator('.crow[data-a="locked"]').count() === 0 && await page.locator('.crow[data-a="open"]').count() === free.cards.length);
+      await page.goto(base + '#home');
+      await page.waitForSelector('.themes');
+    }
     await page.reload();
     await page.waitForSelector('.themes');
     check('still unlocked after reload', await page.locator('.pay').count() === 0);
@@ -265,6 +293,24 @@ if (CODE) {
       by('P') === 5 && by('SP') === 6 && by('I') === 6 && by('D') === 5 && by('SD') === 6 && by('H') === 8 && by('V') === 4,
       [by('P'), by('SP'), by('I'), by('D'), by('SD'), by('H'), by('V')].join(','));
     check('timer starts at 45 minutes', /^4[45]:/.test(await page.locator('#timer').innerText()));
+    if (free.meta.counts.nat) {
+      await page.locator('[data-a="exam-quit"]').click();
+      await page.locator('[data-a="exam-quit-yes"]').click();
+      await page.goto(base + '#home');
+      await page.locator('[data-a="target"][data-v="nat"]').click();
+      await page.goto(base + '#exam');
+      await page.locator('[data-a="exam-start"][data-v="full"]').click();
+      await page.waitForSelector('#timer');
+      st = await state(page);
+      check('the naturalisation exam also has 40 different questions', st.exam.ids.length === 40 && new Set(st.exam.ids).size === 40, String(st.exam.ids.length));
+      await page.locator('[data-a="exam-quit"]').click();
+      await page.locator('[data-a="exam-quit-yes"]').click();
+      await page.goto(base + '#home');
+      await page.locator('[data-a="target"][data-v="cr"]').click();
+      await page.goto(base + '#exam');
+      await page.locator('[data-a="exam-start"][data-v="full"]').click();
+      await page.waitForSelector('#timer');
+    }
     for (let i = 0; i < 40; i++) { await answer(page, i % 5 !== 0); if (i < 39) await page.locator('[data-a="exam-next"]').click(); }
     await page.locator('[data-a="exam-submit"]').click();
     await page.locator('[data-a="exam-submit-yes"]').click();
@@ -412,6 +458,61 @@ if (CODE) {
     check('the code is removed from the address bar', !/code=/.test(page.url()), page.url());
     await ctx.close();
   } else console.log('unlock checks skipped (no CIVIQUE_CODE)');
+
+  // ---- recollections: the page with data (two sessions injected into the free file)
+  console.log('recollections');
+  {
+    const ids = free.qs.filter((q) => q.l.includes('csp')).slice(0, 3).map((q) => q.id);
+    const stem = (id) => free.qs.find((q) => q.id === id);
+    const item = (id) => ({ r: id, q: stem(id).q, k: stem(id).k, t: stem(id).t });
+    const fake = [
+      { w: '2026-10', l: 'cr', n: '知识题基本都在官方清单里。', i: [item(ids[0]), item(ids[1]), { r: 'ZZZ999', q: 'Question que cet appareil ne peut pas ouvrir ?', k: 'c', t: 'droits' }, { x: '情景题：邻居半夜吵闹，问应该怎么做', k: 's', t: 'droits' }] },
+      { w: '2026-09', l: 'csp', n: '', i: [item(ids[0]), item(ids[2])] },
+    ];
+    ({ ctx, page } = await fresh());
+    await page.route('**/data/free.json', async (route) => {
+      const res = await route.fetch(); const body = await res.json(); body.recall = fake;
+      await route.fulfill({ response: res, json: body });
+    });
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.goto(base + '#recall');
+    await page.waitForSelector('.qlist');
+    const txt = await page.locator('main').innerText();
+    check('recollections are grouped by exam month, newest first', txt.indexOf('2026 年 10 月') > 0 && txt.indexOf('2026 年 10 月') < txt.indexOf('2026 年 9 月'));
+    check('recollections say where they come from and that they are not official', /来源于网络/.test(txt) && /不是官方/.test(txt));
+    check('recollections show no account, link or name', !/@|https?:\/\/(?!formation-civique)|小红书/.test(txt));
+    check('questions reported twice are counted', /1<\/span> 道被不同的人提到两次以上/.test(await page.locator('main').innerHTML()));
+    await page.locator('.qlist .qrow[data-a="open"]').first().click();
+    check('a recalled question opens with the answer and the explanation', await page.locator('.detail .copy.plain').count() === 1 && await page.locator('.detail .opt.right').count() === 1);
+    check('a recalled question outside the free sample is shown as locked', await page.locator('.qrow[data-a="locked"]').count() === 1);
+    check('no sideways scroll on the recollections page', await noOverflow(page));
+    await shot(page, '24-recall');
+    await page.locator('[data-a="start"][data-v="all|recall"]').click();
+    await page.waitForSelector('.qbar .back');
+    st = await state(page);
+    check('"practise these" starts with the most reported question', st.sess.mode === 'recall' && st.sess.ids[0] === ids[0] && st.sess.ids.length === 3, JSON.stringify(st.sess.ids));
+    await ctx.close();
+  }
+
+  // ---- offline: after one visit the app opens without a network
+  console.log('offline');
+  ({ ctx, page } = await fresh({ serviceWorkers: 'allow' }));
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await page.waitForSelector('.themes');
+  await page.waitForTimeout(500);
+  await ctx.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('.themes', { timeout: 10000 });
+  await page.locator('[data-a="continue"]').click();
+  await page.waitForSelector('.stem');
+  check('the app opens and a practice set starts without a network', await page.locator('.opts .opt').count() === 4);
+  await ctx.setOffline(false);
+  await ctx.close();
 
   // ---- 8. wide screen and dark theme
   console.log('layouts');

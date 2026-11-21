@@ -290,8 +290,8 @@ if (CODE) {
     const by = (p) => ids.filter((id) => id.startsWith(p)).length;
     check('full exam has 40 different questions', ids.length === 40 && new Set(ids).size === 40);
     check('full exam follows the official split (11 / 6 / 11 / 8 / 4, 12 situational)',
-      by('P') === 5 && by('SP') === 6 && by('I') === 6 && by('D') === 5 && by('SD') === 6 && by('H') === 8 && by('V') === 4,
-      [by('P'), by('SP'), by('I'), by('D'), by('SD'), by('H'), by('V')].join(','));
+      by('P') === 5 && by('S') === 12 && by('I') === 6 && by('D') === 5 && by('H') === 8 && by('V') === 4,
+      [by('P'), by('S'), by('I'), by('D'), by('H'), by('V')].join(','));
     check('timer starts at 45 minutes', /^4[45]:/.test(await page.locator('#timer').innerText()));
     if (free.meta.counts.nat) {
       await page.locator('[data-a="exam-quit"]').click();

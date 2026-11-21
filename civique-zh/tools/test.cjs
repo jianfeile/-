@@ -480,6 +480,7 @@ if (CODE) {
     await page.waitForSelector('.qlist');
     const txt = await page.locator('main').innerText();
     check('recollections are grouped by exam month, newest first', txt.indexOf('2026 年 10 月') > 0 && txt.indexOf('2026 年 10 月') < txt.indexOf('2026 年 9 月'));
+    check('each exam session can be folded', await page.locator('.crow[data-a="sess"]').count() === 2);
     check('recollections say where they come from and that they are not official', /来源于网络/.test(txt) && /不是官方/.test(txt));
     check('recollections show no account, link or name', !/@|https?:\/\/(?!formation-civique)|小红书/.test(txt));
     check('questions reported twice are counted', /1<\/span> 道被不同的人提到两次以上/.test(await page.locator('main').innerHTML()));

@@ -104,6 +104,7 @@
     DB.qs = d.qs; DB.src = d.src || []; DB.byId = {};
     DB.cards = (DB.bank && DB.bank.cards) || DB.free.cards || [];
     DB.recall = DB.free.recall || [];
+    DB.rc = null;
     DB.qs.forEach(function (q) { DB.byId[q.id] = q; });
   }
   function loadFree() {
@@ -396,6 +397,8 @@
     var reveal = show || o.mode === 'review' || (o.mode === 'practice' && answered);
     var showZh = o.zh || reveal;
     var kind = q.k === 's' ? '<span class="tag blue">情景题</span><span class="tag">本站练习题，非官方原题</span>' : '<span class="tag blue">知识题</span><span class="tag">官方题目</span>';
+    var seen = recallIds().n[q.id];
+    if (seen) kind += '<span class="tag hot">机经提到 ' + seen + ' 次</span>';
     var out = '<div class="kind">' + kind + '</div><p class="stem" lang="fr">' + esc(q.q) + '</p>';
     if (o.mode !== 'exam') {
       out += '<div class="tools">' +
@@ -640,11 +643,14 @@
   function lockMark() { return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5.500" y="10.500" width="13" height="9" rx="2"/><path d="M8.500 10.500V8a3.500 3.500 0 0 1 7 0v2.500"/></svg>'; }
   // 机经: what candidates said they were asked, by exam month. Nothing identifies who said it.
   function recallIds() {
+    if (DB.rc) return DB.rc;
     var n = {}, order = [];
     DB.recall.forEach(function (r) { r.i.forEach(function (x) { if (x.r) { if (!n[x.r]) order.push(x.r); n[x.r] = (n[x.r] || 0) + 1; } }); });
     order.sort(function (a, b) { return n[b] - n[a]; });
-    return { n: n, ids: order };
+    DB.rc = { n: n, ids: order };
+    return DB.rc;
   }
+  function sessOpen(ri) { var v = ui.open['s' + ri]; return v === undefined ? ri < 2 : v; }
   function vRecall() {
     var out = '<main class="wrap">' + brand() + '<section class="stack"><h2>机经 · 考生回忆</h2>' +
       '<p class="sub">考过的人在网上分享的回忆，按考试时间整理。来源于网络，不是官方公布的题目，回忆可能有出入，仅供参考。</p></section>';
@@ -655,16 +661,20 @@
       '<div class="big">' + rc.ids.length + '<small> 道被回忆到的题</small></div>' +
       (hot.length ? '<p class="sub">其中 <span class="num">' + hot.length + '</span> 道被不同的人提到两次以上。</p>' : '') +
       (can.length ? '<button class="btn wide" data-a="start" data-v="all|recall">练这些题（每组最多 ' + SET + ' 题）</button>' : '') + '</section>';
+    out += '<section class="stack"><h2>按考试时间</h2><ul class="qlist">';
     DB.recall.forEach(function (r, ri) {
-      var ym = r.w.split('-');
-      out += '<section class="stack"><h2>' + ym[0] + ' 年 ' + Number(ym[1]) + ' 月' + (LEVELS[r.l] ? ' · ' + LEVELS[r.l].zh : '') + '</h2>' + (r.n ? '<p class="sub">' + esc(r.n) + '</p>' : '') + '<ul class="qlist">' +
+      var ym = r.w.split('-'), key = 's' + ri, isOpen = sessOpen(ri);
+      out += '<li><button class="crow" data-a="sess" data-v="' + ri + '" aria-expanded="' + isOpen + '"><span class="grow"><span class="ct">' + ym[0] + ' 年 ' + Number(ym[1]) + ' 月' + (LEVELS[r.l] ? ' · ' + LEVELS[r.l].zh : '') + '</span><span class="cl">回忆到 ' + r.i.length + ' 题' + (r.n ? ' · ' + esc(r.n) : '') + '</span></span><span class="m more" aria-hidden="true">' + (isOpen ? '−' : '+') + '</span></button>';
+      if (!isOpen) { out += '</li>'; return; }
+      out += '<ul class="qlist inner">' +
         r.i.map(function (x, i) {
           var tag = '<span class="tag' + (x.k === 's' ? ' blue' : '') + '">' + (x.k === 's' ? '情景题' : '知识题') + '</span>';
           if (x.r && DB.byId[x.r]) return reviewRow(DB.byId[x.r], i + 1, null, [0, 1, 2, 3], 'r' + ri + '-' + i);
           if (x.r) return '<li><button class="qrow" data-a="locked"><span class="i">' + (i + 1) + '</span><span class="s" lang="fr">' + esc(x.q) + '</span><span class="m more" aria-hidden="true">' + lockMark() + '</span></button></li>';
           return '<li><div class="qrow"><span class="i">' + (i + 1) + '</span><span class="s zhs">' + esc(x.x) + ' ' + tag + '</span><span class="m"></span></div></li>';
-        }).join('') + '</ul></section>';
+        }).join('') + '</ul></li>';
     });
+    out += '</ul></section>';
     if (!unlocked()) out += payBlock('解锁后可以看每道题的讲解');
     return out + '</main>' + tabs('recall');
   }
@@ -828,6 +838,7 @@
     },
     'result-show': function (v) { ui.resultIdx = Number(v); ui.open = {}; go('result'); },
     open: function (v) { ui.open[v] = !ui.open[v]; render(); },
+    sess: function (v) { ui.open['s' + v] = !sessOpen(Number(v)); render(); },
     reset: function () {
       ui.modal = { title: '清空全部练习记录？', body: '<p>练习进度、错题本和模拟考试成绩都会被清空。解锁状态不受影响。</p>', actions: [{ label: '清空', a: 'reset-yes', cls: 'ghost' }, { label: '取消', a: 'close' }] };
       render();

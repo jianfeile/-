@@ -490,7 +490,7 @@
         '<span class="tx"><span class="t1">' + th.zh + '</span><span class="t2" lang="fr">' + th.fr + '</span>' + bar(c.done, c.total) + '</span>' +
         '<span class="cnt"><b>' + c.done + '</b>/' + c.total + '<span class="go" aria-hidden="true">›</span></span></button>';
     }).join('') + '</div></section>';
-    if (!unlocked()) out += payBlock('免费题做完了？解锁全部 ' + t.total + ' 题');
+    if (!unlocked()) out += payBlock('免费题做完了？解锁全部内容');
     return out + disclaimer() + '</main>' + tabs('home');
   }
   function themeSheet(tid) {

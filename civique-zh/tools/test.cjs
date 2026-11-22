@@ -615,6 +615,19 @@ if (CODE) {
   await shot(page, '27-unlock-320');
   await ctx.close();
 
+  // ---- the stylesheet as a whole: a block left open would silently drop every rule after it
+  {
+    const css = fs.readFileSync(path.join(SITE, 'app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    check('stylesheet braces are balanced', css.split('{').length === css.split('}').length);
+    ({ ctx, page } = await fresh());
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForSelector('.themes');
+    const ring = await page.locator('.ring').first().boundingBox();
+    check('home: the progress ring is drawn at its styled size', ring && ring.width > 80 && ring.width < 180, JSON.stringify(ring));
+    await ctx.close();
+  }
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

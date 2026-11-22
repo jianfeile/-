@@ -577,6 +577,22 @@ if (CODE) {
   check('welcome says the recollections are not official and keeps the disclaimer', /不是官方/.test(await page.locator('.wl-proof-wrap').innerText()) && await page.locator('.foot').count() === 1);
   check('headline, numbers and the first choice fit a 390x800 phone without scrolling', await page.evaluate(() => document.querySelector('[data-a="target"]').getBoundingClientRect().bottom <= document.querySelector('.tabs').getBoundingClientRect().top));
   await shot(page, '27-welcome');
+  // ---- home: progress ring, theme icons, best exam result
+  ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  const csp = Object.values(free.meta.counts.csp).reduce((a, m) => a + m.c + m.s, 0);
+  check('home ring starts empty and shows the total from the data', await page.locator('.ring .arc').count() === 0 && (await page.locator('.ring').getAttribute('aria-label')).replace(/\s+/g, '') === '已掌握0/' + csp + '题' && await page.locator('.hero-fact').count() === 0, await page.locator('.ring').getAttribute('aria-label'));
+  check('each theme has an icon and the home actions fit at 320px', await page.locator('.theme .ti svg').count() === 5 && await page.locator('.hero [data-a="continue"]').count() === 1 && await page.locator('.hero a[href="#exam"]').count() === 1 && await page.locator('.quick a').count() === 2 && await noOverflow(page));
+  await page.locator('[data-a="continue"]').click();
+  await page.waitForSelector('.stem');
+  await answer(page, true);
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('civique.v1')); s.exams = [{ ts: 1, target: 'csp', mini: true, score: 9, n: 10, passAt: 8, th: {}, items: [] }, { ts: 2, target: 'csp', mini: false, score: 30, n: 40, passAt: 32, th: {}, items: [] }, { ts: 3, target: 'cr', mini: false, score: 39, n: 40, passAt: 32, th: {}, items: [] }]; localStorage.setItem('civique.v1', JSON.stringify(s)); });
+  await page.goto(base + '#home');
+  await page.reload();
+  await page.waitForSelector('.themes');
+  check('home ring counts a mastered question and the best full exam of this type is shown', await page.locator('.ring .arc').count() === 1 && (await page.locator('.ring .n').innerText()).trim() === '1' && (await page.locator('.hero-fact b').innerText()).trim() === '30/40' && await page.locator('.hero-fact b.pass').count() === 0, await page.locator('.hero-fact').innerText());
   await ctx.close();
 
   console.log('layouts');

@@ -716,6 +716,15 @@ if (CODE) {
     await ctx.close();
   }
 
+  // ---- the dictionary covers every word of the free questions (the full bank is checked when the dictionary is built)
+  {
+    const dict = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'dict.json'), 'utf8')).w;
+    const re = /([A-Za-zÀ-ÿœæŒÆ]+['’])|([A-Za-zÀ-ÿœæŒÆ]+(?:-[A-Za-zÀ-ÿœæŒÆ]+)*)/g;
+    const missing = new Set();
+    for (const q of free.qs) for (const t of [q.q].concat(q.o)) for (const m of t.match(re) || []) { const k = m.toLowerCase().replace('’', "'"); if (!dict[k]) missing.add(k); }
+    check('dictionary has every French word of the free questions', missing.size === 0, [...missing].slice(0, 8).join(' '));
+  }
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

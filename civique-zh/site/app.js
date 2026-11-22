@@ -1315,7 +1315,7 @@
 
   // ---------------------------------------------------------------- actions
   var ACT = {
-    target: function (v) { if (!LEVELS[v]) return; if (S.target !== v) { S.target = v; S.sess = null; } save(); render(); },
+    target: function (v) { if (!LEVELS[v]) return; var first = !S.target; if (S.target !== v) { S.target = v; S.sess = null; } save(); render(first); },   // first choice: the welcome screen was scrolled, the home screen starts at the top
     goto: function (v) { ui.modal = null; go(v); },
     close: function () { ui.modal = null; render(); },
     print: function () { window.print(); },

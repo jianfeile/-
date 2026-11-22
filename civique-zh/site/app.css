@@ -335,3 +335,64 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
 .clinks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 4px; }
 .clinks a { color: var(--blue); font-weight: 600; font-size: 14px; min-height: 32px; display: inline-flex; align-items: center; }
 .small a { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---- home polish ---- */
+/* brand row (every page): the title sits against the notebook's red margin line, the pass mark is rubber-stamped */
+.brand h1 { position: relative; padding-left: 12px; font-weight: 800; letter-spacing: .03em; }
+.brand h1::before { content: ""; position: absolute; left: 0; top: 1px; bottom: 1px; width: 2px; border-radius: 2px; background: var(--margin); }
+.mark { padding: 1px 6px; border-radius: 5px; font-size: 14.5px; line-height: 1.5; letter-spacing: .02em; color: var(--blue); box-shadow: inset 0 0 0 1.5px var(--blue); transform: rotate(-4deg); }
+.mark b { margin-right: 1px; padding: 0 3px; background: linear-gradient(transparent 14%, var(--hl) 14%, var(--hl) 86%, transparent 86%); }
+
+/* exam-type switch and the study switch on #cards / #words */
+.seg { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line); }
+.seg button, .seg a { position: relative; }
+.seg button[aria-pressed="true"], .seg a[aria-current="page"] { background: var(--blue-soft); color: var(--blue); box-shadow: none; }
+.seg button[aria-pressed="true"] b, .seg a[aria-current="page"] b { font-weight: 700; }
+
+/* progress hero */
+.hero.home { gap: 16px; }
+.hero-main { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: center; }
+.ring { position: relative; width: 116px; height: 116px; }
+.ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 9; }
+.ring .trk { stroke: var(--line); }
+.ring .arc { stroke: var(--blue); stroke-linecap: round; }
+.ring .in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.ring .n { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 34px; font-weight: 700; line-height: 1; letter-spacing: -.03em; }
+.ring .of { font-family: var(--font-fr); font-variant-numeric: tabular-nums; font-size: 12.5px; line-height: 1; color: var(--ink2); white-space: nowrap; }
+.hero-acts { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.hero-fact { font-size: 13.5px; line-height: 1.5; color: var(--ink2); }
+.hero-fact b { font-family: var(--font-num); font-weight: 700; color: var(--ink); padding: 0 3px; }
+.hero-fact b.pass { background: linear-gradient(transparent 14%, var(--hl) 14%, var(--hl) 86%, transparent 86%); color: var(--on-hl); border-radius: 2px; }
+.quick { gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.quick a { min-height: 48px; border-radius: 0; background: none; color: var(--blue); }
+.quick a + a { box-shadow: -1px 0 0 var(--line); }
+.quick a svg { width: 20px; height: 20px; flex: none; }
+.quick a b { font-weight: 700; }
+
+/* the five themes: a contents page on ruled paper, icons in the margin */
+.themes { position: relative; border-radius: 6px; background: var(--paper); box-shadow: 0 0 0 1px var(--line), 0 6px 18px -10px var(--shade); }
+.themes::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50px; width: 1.5px; background: var(--margin); opacity: .8; pointer-events: none; }
+.themes .theme { grid-template-columns: 50px minmax(0, 1fr) auto; column-gap: 0; row-gap: 0; padding: 13px 12px 14px 0; border-top: 1px solid var(--rule); min-height: 78px; }
+.themes .theme:first-child { border-top: 0; }
+.themes .theme:last-child { border-bottom: 0; }
+.theme .ti { display: flex; align-items: center; justify-content: center; color: var(--blue); }
+.theme .ti svg { width: 24px; height: 24px; }
+.theme .tx { display: flex; flex-direction: column; min-width: 0; padding-left: 14px; }
+.theme .tx .t2 { margin-top: 1px; }
+.themes .theme .bar { height: 4px; margin-top: 9px; background: var(--rule); }
+.themes .theme .cnt { align-self: start; padding: 1px 0 0 12px; font-family: var(--font-num); font-size: 13.5px; }
+.themes .theme .cnt b { font-size: 16px; }
+.themes .theme .go { margin-left: 6px; }
+.theme.full .ti, .theme.full .cnt b { color: var(--ok); }
+.theme.full .bar i { background: var(--ok); }
+
+/* tab bar: a short ink stroke over the current tab */
+.tabs a::before { content: ""; position: absolute; top: -1px; left: 50%; width: 24px; height: 3px; margin-left: -12px; border-radius: 0 0 3px 3px; background: var(--blue); opacity: 0; }
+.tabs a[aria-current="page"]::before { opacity: 1; }
+
+@media (min-width: 480px) {
+  .ring { width: 132px; height: 132px; }
+  .ring .n { font-size: 40px; }
+  .hero-main { gap: 24px; }
+}

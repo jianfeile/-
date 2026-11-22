@@ -344,6 +344,11 @@
   // ---------------------------------------------------------------- pieces of markup
   var ICON = {
     home: '<path d="M4 11.5 12 4l8 7.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/>',
+    principes: '<path d="M5.5 20.5v-16"/><path d="M5.5 5.5H19v9H5.5"/><path d="M10 5.5v9M14.5 5.5v9"/>',
+    institutions: '<path d="M3.5 9.5 12 4l8.5 5.5z"/><path d="M6.5 12.5V17M10.2 12.5V17M13.8 12.5V17M17.5 12.5V17M4 20h16"/>',
+    droits: '<path d="M12 4.5V20M8 20h8M5.5 7.5h13"/><path d="m5.5 7.5-2.5 6a2.6 2.6 0 0 0 5 0zM18.5 7.5l-2.5 6a2.6 2.6 0 0 0 5 0z"/>',
+    histoire: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.4 3.8 5.2 3.8 8.5s-1.3 6.1-3.8 8.5c-2.5-2.4-3.8-5.2-3.8-8.5s1.3-6.1 3.8-8.5z"/>',
+    societe: '<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19.5c0-3.2 2.3-5.5 5.5-5.5s5.5 2.3 5.5 5.5M15.5 5.7a3 3 0 0 1 0 5.6M17.3 14.4c2 .7 3.2 2.5 3.2 5.1"/>',
     exam: '<circle cx="12" cy="13.5" r="7"/><path d="M12 9.5v4l2.6 1.8M9.5 3.5h5"/>',
     mistakes: '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="m9.5 9.5 5 5m0-5-5 5"/>',
     words: '<path d="M4 6.5h9M8.5 4v2.5M11 6.5c-.6 3.2-2.8 5.8-6.5 7.3M6.5 9.5c1 2 2.800 3.500 5 4.300"/><path d="m13 20 3.500-9 3.500 9M14.200 17h4.600"/>',
@@ -454,14 +459,26 @@
       }).join('') + '</div>';
     if (ui.netFail) out += '<p class="note warn">已购买的题库这次没有加载出来，目前只显示免费题。请检查网络后刷新页面。</p>';
     if (ui.revoked) out += '<p class="note warn">这台设备保存的解锁码已失效，请重新输入解锁码或联系卖家。</p>';
-    out += '<section class="hero"><div class="row between"><span class="sub">已掌握</span>' + (unlocked() ? '<span class="tag blue">已解锁全部题目</span>' : '<span class="tag">免费试用：开放 ' + t.have + ' 题</span>') + '</div>' +
-      '<div class="big">' + t.done + '<small> / ' + t.total + ' 题</small></div>' + bar(t.done, t.total) +
-      '<div class="actions"><button class="btn" data-a="continue">' + (sess ? '继续练习' : (answeredCount() ? '接着练' : '开始练习')) + '</button><a class="btn ghost" href="#exam">模拟考试</a></div>' +
-      '<div class="quick"><a href="#mistakes">错题本' + (mistakes().length ? '<b>' + mistakes().length + '</b>' : '') + '</a><a href="#words">生词表</a></div></section>';
+    var pct = t.total ? Math.round(t.done / t.total * 1000) / 10 : 0, nm = mistakes().length;
+    // best result so far for this exam type: full mock exams first, the short trial exam otherwise
+    var mine = S.exams.filter(function (e) { return e.target === S.target && e.n > 0; });
+    var run = mine.filter(function (e) { return !e.mini; });
+    if (!run.length) run = mine;
+    var best = run.reduce(function (a, e) { return !a || e.score > a.score ? e : a; }, null);
+    out += '<section class="hero home"><div class="row between"><span class="sub">已掌握</span>' + (unlocked() ? '<span class="tag blue">已解锁全部题目</span>' : '<span class="tag">免费试用：开放 ' + t.have + ' 题</span>') + '</div>' +
+      '<div class="hero-main"><div class="ring" role="img" aria-label="已掌握 ' + t.done + ' / ' + t.total + ' 题">' +
+      '<svg viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="54"/>' +
+      (pct > 0 ? '<circle class="arc" cx="60" cy="60" r="54" pathLength="100" stroke-dasharray="' + pct + ' 100"/>' : '') + '</svg>' +
+      '<div class="in" aria-hidden="true"><span class="n">' + t.done + '</span><span class="of">/ ' + t.total + ' 题</span></div></div>' +
+      '<div class="hero-acts"><button class="btn" data-a="continue">' + (sess ? '继续练习' : (answeredCount() ? '接着练' : '开始练习')) + '</button><a class="btn ghost" href="#exam">模拟考试</a></div></div>' +
+      (best ? '<p class="hero-fact">' + (best.mini ? '试考' : '模拟考试') + '最好成绩 <b' + (best.score >= best.passAt ? ' class="pass"' : '') + '>' + best.score + '/' + best.n + '</b>' +
+        (best.score >= best.passAt ? '，已过及格线 ' + best.passAt : '，离及格线 ' + best.passAt + ' 还差 ' + (best.passAt - best.score) + ' 题') + '</p>' : '') +
+      '<div class="quick"><a href="#mistakes">' + icon('mistakes') + '错题本' + (nm ? '<b>' + nm + '</b>' : '') + '</a><a href="#words">' + icon('words') + '生词表</a></div></section>';
     out += '<section class="stack"><h2>五个主题</h2><div class="themes">' + THEMES.map(function (th) {
       var c = counts(th.id);
-      return '<button class="theme" data-a="theme" data-v="' + th.id + '"><span><span class="t1">' + th.zh + '</span><br><span class="t2" lang="fr">' + th.fr + '</span></span>' +
-        '<span class="cnt"><b>' + c.done + '</b> / ' + c.total + '<span class="go" aria-hidden="true">›</span></span>' + bar(c.done, c.total, 'ok') + '</button>';
+      return '<button class="theme' + (c.total && c.done >= c.total ? ' full' : '') + '" data-a="theme" data-v="' + th.id + '"><span class="ti">' + icon(th.id) + '</span>' +
+        '<span class="tx"><span class="t1">' + th.zh + '</span><span class="t2" lang="fr">' + th.fr + '</span>' + bar(c.done, c.total) + '</span>' +
+        '<span class="cnt"><b>' + c.done + '</b>/' + c.total + '<span class="go" aria-hidden="true">›</span></span></button>';
     }).join('') + '</div></section>';
     if (!unlocked()) out += payBlock('免费题做完了？解锁全部 ' + t.total + ' 题');
     return out + disclaimer() + '</main>' + tabs('home');

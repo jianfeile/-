@@ -568,6 +568,28 @@ if (CODE) {
   await shot(page, '26-register-320');
   await ctx.close();
 
+  console.log('offer');
+  ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
+  await page.goto(base + '#cards');
+  await page.waitForSelector('.crow');
+  check('the compact offer also shows before an exam is chosen', await page.locator('.pay').count() === 1 && await page.locator('.pay a[href="#unlock"]').count() === 1 && (await page.locator('.pay-facts b').first().innerText()).trim() === String(free.meta.total));
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  await page.goto(base + '#unlock');
+  await page.waitForSelector('.cmp');
+  {
+    const csp = free.meta.counts.csp, all = Object.values(csp).reduce((n, c) => n + c.c + c.s, 0), open = free.qs.filter((q) => q.l.includes('csp')).length;
+    const cells = await page.locator('.cmp tbody tr').first().locator('td b').allInnerTexts();
+    check('the offer compares the free trial with the full bank, counted from the data', cells.join('|') === open + '|' + all && (await page.locator('.offer-h').innerText()).includes(String(free.meta.total)), cells.join('|'));
+    const stem = (await page.locator('.offer-sample .stem').innerText()).trim(), q = free.qs.find((x) => x.q === stem);
+    const rightAt = await page.locator('.offer-sample .opt').evaluateAll((els) => els.findIndex((e) => e.classList.contains('right')));
+    check('the offer shows one free question as an example, with its explanation, the right answer not first', !!q && q.k === 'c' && q.l.includes('csp') && rightAt > 0 && await page.locator('.offer-sample .opt.right').count() === 1 && (await page.locator('.offer-sample .copy').innerText()).includes(q.e));
+  }
+  check('no sideways scroll at 320px on the unlock page', await noOverflow(page) && await page.locator('#codeform').count() === 1);
+  await shot(page, '27-unlock-320');
+  await ctx.close();
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

@@ -153,13 +153,6 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
 .note.blue { background: var(--blue-soft); }
 .note.warn { background: var(--bad-soft); color: var(--ink); }
 .note b { font-weight: 700; }
-.pay { border-radius: var(--r); padding: 18px 16px; background: var(--blue-soft); display: flex; flex-direction: column; gap: 12px; }
-.pay h2 { color: var(--ink); }
-.pay ul { display: flex; flex-direction: column; gap: 6px; font-size: 14.5px; }
-.pay li { padding-left: 22px; position: relative; }
-.pay li::before { content: ""; position: absolute; left: 3px; top: .55em; width: 9px; height: 5px; border-left: 2px solid var(--blue); border-bottom: 2px solid var(--blue); transform: rotate(-45deg); }
-.price { font-family: var(--font-num); font-weight: 700; font-size: 26px; line-height: 1.1; }
-.price small { font-family: var(--font-zh); font-size: 13px; font-weight: 400; color: var(--ink2); margin-left: 8px; }
 .field { display: flex; gap: 8px; }
 .field input { flex: 1 1 0; min-width: 0; min-height: 50px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--paper); color: var(--ink); padding: 8px 12px; font-family: var(--font-num); font-size: 17px; letter-spacing: .06em; text-transform: uppercase; }
 .field input::placeholder { letter-spacing: .04em; color: var(--ink2); opacity: .7; text-transform: none; }
@@ -335,3 +328,71 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
 .clinks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 4px; }
 .clinks a { color: var(--blue); font-weight: 600; font-size: 14px; min-height: 32px; display: inline-flex; align-items: center; }
 .small a { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---- offer (unlock page and pay block) ---- */
+/* the price is the one thing gone over with the highlighter */
+.price { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.price b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 26px; line-height: 1.2; letter-spacing: -.02em; white-space: nowrap; background: linear-gradient(transparent 10%, var(--hl) 10%, var(--hl) 90%, transparent 90%); color: var(--on-hl); padding: 0 7px; border-radius: 2px; }
+.price small { font-size: 12.5px; line-height: 1.3; color: var(--ink2); }
+.pay { border-radius: var(--r); padding: 18px 16px 16px; background: var(--blue-soft); display: flex; flex-direction: column; gap: 14px; }
+.pay h2 { color: var(--ink); }
+.pay-facts { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.pay-facts li { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 0 12px; border-left: 1.5px solid var(--blue); min-width: 0; }
+.pay-facts b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 28px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+.pay-facts span { font-size: 12.5px; line-height: 1.35; color: var(--ink2); }
+.pay-line { font-size: 14px; line-height: 1.6; }
+.pay-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pay-foot .btn { flex: 0 0 auto; min-width: 116px; }
+
+.offer { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.offer-eye { font-size: 13px; font-weight: 700; line-height: 1.3; letter-spacing: .1em; color: var(--blue); }
+.offer-h { font-size: 27px; font-weight: 800; line-height: 1.24; letter-spacing: -.01em; }
+.offer-h > span { display: block; }
+.offer-h .num { font-family: var(--font-num); font-weight: 700; }
+.cmp tbody th small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--ink2); }
+.offer-price { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: center; padding: 18px 0; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line); }
+.offer-price .price b { font-size: 38px; }
+.offer-terms { font-size: 13px; line-height: 1.55; color: var(--ink2); }
+.offer-terms b { display: block; font-size: 16px; line-height: 1.4; color: var(--ink); margin-bottom: 2px; }
+@media (max-width: 359px) {
+  .offer-h { font-size: 24px; }
+  .offer-price { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
+.offer-after { display: flex; flex-direction: column; gap: 8px; }
+.offer-after h3 { font-size: 14px; font-weight: 700; line-height: 1.4; }
+.offer-after ol { counter-reset: after; display: flex; flex-direction: column; gap: 8px; }
+.offer-after li { counter-increment: after; position: relative; padding-left: 30px; font-size: 14.5px; line-height: 1.55; }
+.offer-after li::before { content: counter(after); position: absolute; left: 0; top: 1px; width: 21px; height: 21px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--blue); color: var(--blue); font-family: var(--font-num); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+/* free trial next to the unlocked bank: the unlocked column is the inked one */
+.cmp { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 14px; line-height: 1.45; }
+.cmp thead td { width: 25%; }
+.cmp thead th { text-align: left; padding: 10px 10px 8px; font-size: 13px; font-weight: 700; color: var(--ink2); }
+.cmp thead th.on { color: var(--blue); background: var(--blue-soft); border-radius: 12px 12px 0 0; }
+.cmp tbody th { text-align: left; vertical-align: top; padding: 13px 6px 13px 0; font-size: 14px; font-weight: 600; border-top: 1px solid var(--line); }
+.cmp tbody td { vertical-align: top; padding: 11px 10px 13px; border-top: 1px solid var(--line); color: var(--ink2); overflow-wrap: anywhere; }
+.cmp tbody td.on { background: var(--blue-soft); color: var(--ink); font-weight: 600; }
+.cmp tbody tr:last-child td.on { border-radius: 0 0 12px 12px; }
+.cmp td b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700; line-height: 1.2; letter-spacing: -.02em; margin-right: 4px; }
+.cmp td.on b { color: var(--ink); }
+.cmp td b.key { background: linear-gradient(transparent 8%, var(--hl) 8%, var(--hl) 92%, transparent 92%); color: var(--on-hl); padding: 0 4px; border-radius: 2px; }
+.cmp td small { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; line-height: 1.45; color: var(--ink2); }
+
+/* a whole question as it is shown after answering, marked as an example */
+.offer-sample { position: relative; display: flex; flex-direction: column; gap: 12px; margin-top: 8px; padding: 24px 14px 16px; border: 1.5px dashed var(--line); border-radius: var(--r); min-width: 0; }
+.offer-stamp { position: absolute; top: -12px; left: 12px; padding: 2px 9px; border-radius: 3px; background: var(--hl); color: var(--on-hl); font-size: 12.5px; font-weight: 700; line-height: 1.6; letter-spacing: .12em; transform: rotate(-2deg); }
+.offer-sample .stem { font-size: 18.5px; }
+.offer-sample .opts { gap: 8px; }
+.offer-sample .opt { padding: 9px 12px; min-height: 0; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
+.offer-sample .opt .let { width: 30px; height: 30px; font-size: 14px; }
+.offer-sample .opt .txt { padding-top: 3px; }
+.offer-sample .opt .fr { font-size: 16px; }
+.offer-sample + .pay-foot { margin-top: 6px; }
+
+.offer-have h2 { font-size: 15px; }
+.offer-honest { display: flex; flex-direction: column; gap: 6px; padding-left: 14px; border-left: 1.5px solid var(--margin); }
+.offer-honest h2 { font-size: 15px; }
+.offer-honest p { font-size: 13.5px; line-height: 1.7; color: var(--ink2); }
+.offer-code { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px; border: 1.5px dashed var(--blue); border-radius: var(--r); }
+.offer-code .code { font-size: 25px; line-height: 1.3; }
+@media (max-width: 359px) { .offer-code .code { font-size: 22px; } }

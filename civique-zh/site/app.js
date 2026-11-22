@@ -369,13 +369,14 @@
     return '<div class="bar ' + (cls || '') + '" role="img" aria-label="' + done + ' / ' + total + '"><i style="width:' + w + '%"></i></div>';
   }
   function payBlock(lead) {
-    var t = totals();
-    return '<section class="pay"><h2>' + esc(lead || '解锁全部题目') + '</h2><ul>' +
-      '<li>' + LEVELS[S.target || 'csp'].zh + '全部 <span class="num">' + t.know + '</span> 道官方知识题，逐题中文翻译和讲解</li>' +
-      '<li><span class="num">' + t.situ + '</span> 道情景练习题（正式考试 40 题里有 12 题是情景题）</li>' +
-      '<li>完整模拟考试：40 题、45 分钟、32 题及格，可以反复考</li>' +
-      '<li>' + levelIds().map(function (lv) { return LEVELS[lv].short; }).join('、') + '的题库和考点速记都包含，一次付款长期使用</li></ul>' +
-      '<div class="row between"><span class="price">' + esc(CFG.price || '') + '<small>一次性付款</small></span>' +
+    var d = offerData();
+    return '<section class="pay"><h2>' + esc(lead || '解锁全部题目') + '</h2>' +
+      '<ul class="pay-facts">' +
+      '<li><b>' + d.total + '</b><span>' + (d.lv ? LEVELS[d.lv].short + '题目' : '全部题目') + '</span></li>' +
+      (d.cards ? '<li><b>' + d.cards + '</b><span>张考点速记</span></li>' : '') +
+      '<li><b>' + EXAM.n + '</b><span>题完整模考</span></li></ul>' +
+      '<p class="pay-line">每题都有中文翻译和讲解。' + levelIds().map(function (lv) { return LEVELS[lv].short; }).join('、') + '的题库都包含，现在免费开放 ' + d.free + ' 题。</p>' +
+      '<div class="pay-foot"><span class="price"><b>' + esc(CFG.price || '') + '</b><small>一次性付款，不是订阅</small></span>' +
       '<a class="btn" href="#unlock">去解锁</a></div></section>';
   }
   function modal() {
@@ -803,30 +804,83 @@
       '<div class="row between"><span>练习记录</span><button class="link" data-a="reset">清空全部记录</button></div></section>';
     return out + (DB.free ? disclaimer() : '') + '</main>' + tabs('about');
   }
+  // what is open for free and what the unlock adds, counted from the data (for the chosen exam when there is one)
+  function offerData() {
+    var m = DB.free.meta, lv = LEVELS[S.target] && m.counts[S.target] ? S.target : '';
+    var t = lv ? totals() : null, seen = {}, freeIds = {}, words = 0, rc = recallIds();
+    (DB.free.qs || []).forEach(function (q) {
+      freeIds[q.id] = 1;
+      if (lv && q.l.indexOf(lv) < 0) return;
+      (q.v || []).forEach(function (v) { var k = v[0].toLowerCase(); if (!seen[k]) { seen[k] = 1; words++; } });
+    });
+    return {
+      lv: lv, free: t ? t.have : m.free, total: t ? t.total : m.total, know: t ? t.know : 0, situ: t ? t.situ : 0,
+      cards: m.cards || 0, cardsFree: (DB.free.cards || []).filter(function (c) { return !c.x; }).length,
+      words: words, recall: rc.ids.length, recallFree: rc.ids.filter(function (id) { return freeIds[id]; }).length
+    };
+  }
+  // one free knowledge question shown whole, always the same one for a given exam
+  function offerSample(lv) {
+    var list = (DB.free.qs || []).filter(function (q) { return q.k === 'c' && q.e && q.qz && q.v && q.v.length && (!lv || q.l.indexOf(lv) >= 0); });
+    return list[0] || null;
+  }
   function vUnlock() {
     ping('paywall');
     var out = '<main class="wrap">' + brand();
     if (unlocked()) {
-      return out + '<section class="stack"><h2>已解锁全部题目</h2>' + (ui.msg ? '<p class="msg ok">' + esc(ui.msg.text) + '</p>' : '') +
-        '<p class="note blue">这台设备已经解锁。换手机或换浏览器时，输入同一个解锁码即可' + (CFG.api ? '，也可以用付款时的邮箱找回' : '') + '。<br>你的解锁码：<b class="code">' + esc(S.unlock ? S.unlock.code : '') + '</b><br>建议现在截图保存。</p><a class="btn wide" href="#home">回首页</a></section></main>' + tabs('home');
+      return out + '<section class="stack"><h2 class="offer-h">已解锁全部题目</h2>' + (ui.msg ? '<p class="msg ok">' + esc(ui.msg.text) + '</p>' : '') +
+        '<div class="offer-code"><span class="sub">你的解锁码</span><b class="code">' + esc(S.unlock ? S.unlock.code : '') + '</b><span class="small">建议现在截图保存。</span></div>' +
+        '<p class="small">这台设备已经解锁。换手机或换浏览器时，输入同一个解锁码即可' + (CFG.api ? '，也可以用付款时的邮箱找回' : '') + '。</p>' +
+        '<a class="btn wide" href="#home">回首页</a></section></main>' + tabs('home');
     }
-    var t = S.target ? totals() : null, at = ui.msg ? (ui.msg.at || 'code') : '';
+    var d = offerData(), at = ui.msg ? (ui.msg.at || 'code') : '';
+    var names = levelIds().map(function (lv) { return LEVELS[lv].zh; }).join('、');
+    var others = levelIds().filter(function (lv) { return lv !== d.lv; }).map(function (lv) { return LEVELS[lv].short; }).join('、');
     function msg(where) { return '<p class="msg ' + (at === where ? (ui.msg.ok ? 'ok' : 'bad') : '') + '" role="status">' + (at === where ? esc(ui.msg.text) : '') + '</p>'; }
+    function cell(n, unit, more) { return (n === '' ? '' : '<b>' + n + '</b>') + '<span>' + unit + '</span>' + (more ? '<small>' + more + '</small>' : ''); }
+    function row(name, free, paid) { return '<tr><th scope="row">' + name + '</th><td>' + free + '</td><td class="on">' + paid + '</td></tr>'; }
     if (S.pending || at === 'pay') out += '<section class="stack"><h2>' + (S.pending ? '正在确认你的付款' : '付款没有确认') + '</h2>' + msg('pay') +
       (S.pending ? '<button class="btn wide" data-a="pay-retry"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '确认中' : '重新确认') + '</button>' : '') + '</section>';
-    out += '<section class="pay"><h2>解锁全部题目</h2><ul>' +
-      '<li>' + levelIds().map(function (lv) { return LEVELS[lv].zh; }).join('、') + '的官方知识题，共 <span class="num">' + DB.free.meta.total + '</span> 题（含情景练习题），逐题中文翻译和讲解</li>' +
-      (DB.free.meta.cards ? '<li><span class="num">' + DB.free.meta.cards + '</span> 张中文考点速记，对照官方讲义整理</li>' : '') +
-      '<li>完整模拟考试：40 题、45 分钟、32 题及格，可以反复考</li>' +
-      '<li>错题本、生词表全部开放</li><li>一次付款，长期使用，题目更正和补充不再收费</li></ul>' +
-      '<div class="price">' + esc(CFG.price || '') + '<small>一次性付款</small></div>' +
-      (CFG.payUrl ? '<a class="btn wide" href="' + esc(payHref()) + '">去付款</a><p class="small">支持银行卡等方式，付款页面由 Stripe 提供，本站不接触你的卡号。付款完成后会自动回到本站并解锁，同时给你一个解锁码，换设备时用。</p>'
+
+    // 1. the offer and its price
+    out += '<section class="offer"><p class="offer-eye">解锁全部内容</p>' +
+      '<h2 class="offer-h"><span>全部 <span class="num">' + DB.free.meta.total + '</span> 题，</span><span>每题都有中文翻译和讲解</span></h2>' +
+      '<p class="sub">' + names + '的题库都包含。</p>' +
+      '<div class="offer-price"><span class="price"><b>' + esc(CFG.price || '') + '</b></span>' +
+      '<p class="offer-terms"><b>一次性付款</b>不是订阅，不会自动续费。想用多久用多久，题目更正和补充不再收费。</p></div>' +
+      (CFG.payUrl ? '<a class="btn wide" href="' + esc(payHref()) + '">去付款</a>' +
+        '<div class="offer-after"><h3>付款之后</h3><ol>' +
+        '<li>自动回到本站，全部题目马上解锁。</li>' +
+        '<li>同时给你一个解锁码，换手机或换浏览器时输入。</li>' +
+        (CFG.api ? '<li>解锁码找不到了，可以用付款时的邮箱找回。</li>' : '') + '</ol></div>' +
+        '<p class="small">支持银行卡等方式，付款页面由 Stripe 提供，本站不接触你的卡号。</p>'
         : '<p class="small">' + (CFG.contact ? '购买请联系：' + esc(CFG.contact) + '。付款后会收到一个解锁码。' : '付款后会收到一个解锁码，填在下面即可。') + '</p>') +
       '</section>';
-    out += '<section class="stack"><h2>已经有解锁码</h2><form id="codeform" class="stack"><div class="field"><input id="code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="例如 ABCD-2345-EFGH" aria-label="解锁码" maxlength="20"><button class="btn" type="submit"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '解锁中' : '解锁') + '</button></div>' +
+
+    // 2. free trial next to the unlocked bank
+    out += '<section class="stack"><h2>免费试用和解锁后的区别</h2><table class="cmp"><thead><tr><td></td><th scope="col">免费试用</th><th scope="col" class="on">解锁后</th></tr></thead><tbody>' +
+      row('题目' + (d.lv ? '<small>' + LEVELS[d.lv].short + '</small>' : ''), cell(d.free, '题', '翻译和讲解都有'),
+        '<b class="key">' + d.total + '</b><span>题</span><small>' + (d.lv ? '知识题 ' + d.know + '，情景题 ' + d.situ : '三种考试合计，逐题翻译和讲解') + '</small>') +
+      (d.lv && others ? row('其他类型', cell('', '同样可以试用'), cell('', others + '的题库也包含')) : '') +
+      (d.cards ? row('考点速记', cell(d.cardsFree, '张'), cell(d.cards, '张', '中文要点，对照官方讲义')) : '') +
+      row('模拟考试', cell(MINI.n, '题', '试考，' + MINI.min + ' 分钟'), cell(EXAM.n, '题', '完整模考，' + EXAM.min + ' 分钟，' + EXAM.pass + ' 题及格，可以反复考')) +
+      (d.recall ? row('机经讲解', cell(d.recallFree, '道'), cell(d.recall, '道', '考生回忆到的题，逐题讲解')) : '') +
+      row('错题本', cell('', '只收免费题的错题'), cell('', '收全部题目的错题')) +
+      row('生词表', cell(d.words, '个词'), cell('', '全部题目的生词')) +
+      '</tbody></table></section>';
+
+    // 3. what one question looks like
+    var sq = offerSample(d.lv);
+    if (sq) out += '<section class="stack"><h2>每道题都是这样讲的</h2><p class="sub">这是免费题里的一道知识题：法语原题、中文翻译、讲解和生词。解锁后的每道题都是同样的格式。</p>' +
+      '<div class="offer-sample"><span class="offer-stamp">示例</span>' + question(sq, { perm: [2, 0, 3, 1], mode: 'show' }) + '</div>' +
+      (CFG.payUrl ? '<div class="pay-foot"><span class="price"><b>' + esc(CFG.price || '') + '</b><small>一次性付款，不是订阅</small></span><a class="btn" href="' + esc(payHref()) + '">去付款</a></div>' : '') +
+      '</section>';
+
+    // 4. for people who already paid
+    out += '<hr class="hr"><section class="stack offer-have"><h2>已经有解锁码</h2><form id="codeform" class="stack"><div class="field"><input id="code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="例如 ABCD-2345-EFGH" aria-label="解锁码" maxlength="20"><button class="btn" type="submit"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '解锁中' : '解锁') + '</button></div>' +
       msg('code') + '</form></section>';
-    if (CFG.api) out += '<section class="stack"><h2>找回解锁码</h2><p class="small">付过款，但换了手机或找不到解锁码：填付款时用的邮箱。</p><form id="mailform" class="stack"><div class="field"><input id="mail" class="plain" name="mail" type="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="付款时填写的邮箱" aria-label="付款邮箱" maxlength="120"><button class="btn" type="submit"' + (ui.busy ? ' disabled' : '') + '>找回</button></div>' + msg('mail') + '</form></section>';
-    out += '<section class="stack"><p class="small">官方的备考资料是免费的，不付款也可以在内政部网站上看到全部法语题目和讲义。这里收费的是中文翻译、讲解和练习工具。' + (t ? '免费试用部分开放 ' + t.have + ' 题，可以先试再决定。' : '') + '</p></section>';
+    if (CFG.api) out += '<section class="stack offer-have"><h2>找回解锁码</h2><p class="small">付过款，但换了手机或找不到解锁码：填付款时用的邮箱。</p><form id="mailform" class="stack"><div class="field"><input id="mail" class="plain" name="mail" type="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="付款时填写的邮箱" aria-label="付款邮箱" maxlength="120"><button class="btn" type="submit"' + (ui.busy ? ' disabled' : '') + '>找回</button></div>' + msg('mail') + '</form></section>';
+    out += '<section class="offer-honest"><h2>不付款也可以备考</h2><p>官方的备考资料是免费的，不付款也可以在内政部网站上看到全部法语题目和讲义。这里收费的是中文翻译、讲解和练习工具。免费试用部分开放 ' + d.free + ' 题，可以先试再决定。</p></section>';
     return out + '</main>' + tabs('home');
   }
 

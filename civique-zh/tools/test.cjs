@@ -568,6 +568,17 @@ if (CODE) {
   await shot(page, '26-register-320');
   await ctx.close();
 
+  console.log('welcome');
+  ({ ctx, page } = await fresh({ viewport: { width: 390, height: 800 } }));
+  await page.goto(base);
+  await page.waitForSelector('[data-a="target"]');
+  const proofNums = await page.locator('.wl-proof li b').allInnerTexts();
+  check('welcome shows the bank\'s own numbers', [free.meta.total, free.meta.cards, (free.recall || []).length, free.meta.free].filter((n) => n > 0).join() === proofNums.join(), proofNums.join());
+  check('welcome says the recollections are not official and keeps the disclaimer', /不是官方/.test(await page.locator('.wl-proof-wrap').innerText()) && await page.locator('.foot').count() === 1);
+  check('headline, numbers and the first choice fit a 390x800 phone without scrolling', await page.evaluate(() => document.querySelector('[data-a="target"]').getBoundingClientRect().bottom <= document.querySelector('.tabs').getBoundingClientRect().top));
+  await shot(page, '27-welcome');
+  await ctx.close();
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

@@ -434,11 +434,20 @@
 
   // ---------------------------------------------------------------- views
   function vChoose() {
-    var m = DB.free.meta.counts;
+    var meta = DB.free.meta, m = meta.counts;
     function n(lv) { var c = 0; THEMES.forEach(function (t) { c += m[lv][t.id].c; }); return c; }
-    return '<main class="wrap">' + brand() +
-      '<p>法国公民考试（examen civique）练习。法语原题，每题都有中文翻译和讲解。</p>' +
-      '<section class="stack"><h2>你准备申请哪一种？</h2>' +
+    var proof = [[meta.total, '道练习题'], [meta.cards, '张考点速记'], [DB.recall.length, '场考生回忆'], [meta.free, '道免费试做', 'free']]
+      .filter(function (p) { return p[0] > 0; });
+    return '<main class="wrap wl">' +
+      '<header class="wl-hero"><p class="wl-kicker"><span lang="fr">examen civique</span> · 中文题库</p>' +
+      '<h1>法国公民考试，<br>用中文<em>看懂每一题</em></h1>' +
+      '<p class="wl-lead">法语原题，每题都有中文翻译和讲解。</p>' +
+      '<span class="wl-stamp" role="img" aria-label="40 题答对 32 题通过"><b>32</b><i>/40</i><small>及格线</small></span></header>' +
+      '<section class="wl-proof-wrap"><ul class="wl-proof" style="grid-template-columns:repeat(' + proof.length + ',1fr)">' + proof.map(function (p) {
+        return '<li' + (p[2] ? ' class="' + p[2] + '"' : '') + '><b>' + p[0] + '</b><span>' + p[1] + '</span></li>';
+      }).join('') + '</ul>' +
+      '<p class="small">' + (DB.recall.length ? '考生回忆（机经）来自网上的分享，不是官方公布的题目。' : '') + '另有<a href="#register">官方考点查询和报名步骤</a>。</p></section>' +
+      '<section class="stack wl-next"><div><p class="wl-step">免费开始，不用注册</p><h2>你准备申请哪一种？</h2></div>' +
       levelIds().map(function (lv) {
         return '<button class="pick" data-a="target" data-v="' + lv + '"><span class="grow"><span class="t1">' + LEVELS[lv].zh + '</span><br><span class="t2" lang="fr">' + LEVELS[lv].fr + '</span></span><span class="cnt"><b>' + n(lv) + '</b> 道官方题<span class="go" aria-hidden="true">›</span></span></button>';
       }).join('') +

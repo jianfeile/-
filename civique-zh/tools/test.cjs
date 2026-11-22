@@ -559,6 +559,82 @@ if (CODE) {
   await shot(page, '28-sheet-320');
   await ctx.close();
 
+  // ---- exam date, daily goal and the readiness estimate on the home screen
+  console.log('plan and readiness');
+  ({ ctx, page } = await fresh({ viewport: { width: 390, height: 800 } }));
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  const dayIso = (n) => page.evaluate((k) => { const d = new Date(); d.setDate(d.getDate() + k); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }, n);
+  const flat = async (sel) => (await page.locator(sel).innerText()).replace(/\s+/g, '');
+  const openCsp = free.qs.filter((q) => q.l.includes('csp'));
+  const allCsp = Object.values(free.meta.counts.csp).reduce((a, m) => a + m.c + m.s, 0);
+  check('a new user sees an invitation instead of a readiness number, and a default daily goal',
+    await page.locator('.rd.rd-empty').count() === 1 && await page.locator('.rd-num').count() === 0 && /做几组题之后/.test(await page.locator('.rd').innerText()) && !/\d/.test(await page.locator('.rd').innerText()) &&
+    await flat('.plan-now') === '今天0/20题' && await page.locator('.plan-ask [data-a="plan-edit"]').count() === 1, await flat('.plan'));
+  check('ring, main button and readiness fit a 390x800 phone without scrolling', await page.evaluate(() => {
+    const top = document.querySelector('.tabs').getBoundingClientRect().top;
+    return ['.ring', '[data-a="continue"]', '.rd'].every((s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.top >= 0 && r.bottom <= top; });
+  }));
+  await page.locator('[data-a="plan-edit"]').click();
+  await page.locator('#examdate').fill(await dayIso(3));
+  await page.locator('#planform button[type="submit"]').click();
+  const goal = Math.min(openCsp.length, Math.max(10, Math.min(60, Math.ceil(openCsp.length / 3))));
+  st = await state(page);
+  check('setting the exam date shows the days left and a daily goal computed from the questions that are open',
+    st.examDate === await dayIso(3) && (await page.locator('.plan-date b').innerText()).trim() === '3' && await flat('.plan-now') === '今天0/' + goal + '题' &&
+    (await flat('.plan-note')).includes('另有' + (allCsp - openCsp.length) + '题解锁后才能练'), await flat('.plan'));
+  await page.locator('[data-a="continue"]').click();
+  await page.waitForSelector('.stem');
+  await answer(page, true);
+  await page.locator('[data-a="next"]').click();
+  await answer(page, false);
+  await page.goto(base + '#home');
+  await page.waitForSelector('.themes');
+  st = await state(page);
+  check('answers given in practice count toward today', await flat('.plan-now') === '今天2/' + goal + '题' && JSON.stringify(st.days[await dayIso(0)]) === '[2,1]', await flat('.plan-now') + ' ' + JSON.stringify(st.days));
+  // the estimate, computed here from the saved state: quota x (share mastered + share not mastered x 25%), knowledge and situational apart
+  const known = openCsp.filter((q, i) => i % 3 !== 2);
+  await page.evaluate((ids) => { const s = JSON.parse(localStorage.getItem('civique.v1')); s.stats = {}; s.sess = null; ids.forEach((id) => { s.stats[id] = [1, 1, 1, 0, 1]; }); localStorage.setItem('civique.v1', JSON.stringify(s)); }, known.map((q) => q.id));
+  await page.reload();
+  await page.waitForSelector('.rd-num');
+  const QUOTA = { principes: [5, 6], institutions: [6, 0], droits: [5, 6], histoire: [8, 0], societe: [4, 0] };
+  let est = 0;
+  for (const t of Object.keys(QUOTA)) ['c', 's'].forEach((kind, i) => {
+    const total = free.meta.counts.csp[t][kind];
+    const share = total ? known.filter((q) => q.t === t && q.k === kind).length / total : 0;
+    est += QUOTA[t][i] * (share + (1 - share) * 0.25);
+  });
+  const rdText = await flat('.rd');
+  check('the readiness number is the documented estimate, labelled as an estimate and honest about locked questions',
+    (await page.locator('.rd-num b').innerText()).trim() === String(Math.round(est)) && (await page.locator('.rd-state').innerText()).trim() === (Math.round(est) >= 32 ? '可以去考' : Math.round(est) >= 28 ? '接近' : '还不够') &&
+    rdText.includes('估算，不是保证') && rdText.includes('按全部' + allCsp + '题算；解锁前只能练其中' + openCsp.length + '题'), rdText + ' / expected ' + est);
+  await page.locator('[data-a="open"][data-v="rd"]').click();
+  check('the estimate explains how it is computed', /25%/.test(await page.locator('.rd-how').innerText()) && await page.locator('.rd-how li').count() === 5);
+  const weak = await page.locator('.rd-weak [data-a="start"]').getAttribute('data-v');
+  await page.locator('.rd-weak [data-a="start"]').click();
+  await page.waitForSelector('.stem');
+  st = await state(page);
+  check('the weakest theme can be practised from the estimate', st.sess.theme === weak.split('|')[0] && st.sess.ids.every((id) => !known.some((q) => q.id === id)), weak);
+  // a mock exam result links to the estimate; the date can be cleared; a date in the past asks to be updated
+  const past = await dayIso(-2);
+  await page.evaluate((d) => { const s = JSON.parse(localStorage.getItem('civique.v1')); s.sess = null; s.examDate = d; s.exams = [{ ts: Date.now(), target: 'csp', mini: true, score: 8, n: 10, passAt: 8, secs: 90, th: { principes: [3, 3], institutions: [2, 2], droits: [1, 2], histoire: [1, 2], societe: [1, 1] }, items: [] }]; localStorage.setItem('civique.v1', JSON.stringify(s)); }, past);
+  await page.goto(base + '#result');
+  await page.reload();
+  await page.waitForSelector('.rd-next');
+  check('the result page names the weakest theme of the exam and offers to practise it', /权利与义务/.test(await page.locator('.rd-next p').innerText()) && (await page.locator('.rd-next p b').innerText()).trim() === String(Math.round(est)) && await page.locator('.rd-next [data-a="start"]').getAttribute('data-v') === 'droits|todo');
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.goto(base + '#home');
+  await page.waitForSelector('.themes');
+  check('a date in the past asks to be changed, and the latest mock exam sits next to the estimate', /已经过了/.test(await page.locator('.plan').innerText()) && await flat('.plan-now') === '今天2/' + Math.min(20, openCsp.length - known.length + 1) + '题' && (await page.locator('.rd .hero-fact b').innerText()).trim() === '8/10');
+  await page.locator('.plan-date').click();
+  check('no sideways scroll at 320px with the date form open', await page.locator('#examdate').count() === 1 && await page.locator('#examdate').getAttribute('min') === await dayIso(0) && await noOverflow(page));
+  await page.locator('#planform [data-a="plan-clear"]').click();
+  st = await state(page);
+  check('the exam date can be cleared', st.examDate === '' && await page.locator('.plan-date').count() === 0 && await page.locator('.plan-ask [data-a="plan-edit"]').count() === 1 && await noOverflow(page));
+  await shot(page, '31-home-plan-320');
+  await ctx.close();
+
   // ---- registering for the real exam: steps and the centre finder
   console.log('registration page');
   ({ ctx, page } = await fresh({ geolocation: { latitude: 45.764, longitude: 4.8357 }, permissions: ['geolocation'] }));

@@ -538,6 +538,78 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
   .ring .n { font-size: 40px; }
   .hero-main { gap: 24px; }
 }
+/* ---- plan and readiness ---- */
+/* today's goal: one line and a thin bar under the ring */
+.plan { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.plan-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 28px; }
+.plan-now { font-size: 14.5px; line-height: 1.4; color: var(--ink2); min-width: 0; }
+.plan-now b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 700; color: var(--ink); letter-spacing: -.02em; }
+.plan-ok, .plan-week { display: inline-block; margin-left: 10px; font-size: 13.5px; }
+.plan-ok { font-weight: 600; color: var(--ok); }
+.plan-date { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin: -8px 0; font-size: 14.5px; color: var(--ink); white-space: nowrap; }
+.plan-date b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 700; letter-spacing: -.02em; padding: 0 2px; background: linear-gradient(transparent 14%, var(--hl) 14%, var(--hl) 86%, transparent 86%); color: var(--on-hl); border-radius: 2px; }
+.plan-date i { font-style: normal; font-size: 13px; font-weight: 600; color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
+.plan .bar { height: 6px; background: var(--rule); }
+.plan .small { line-height: 1.5; }
+.plan-ask { display: flex; align-items: center; justify-content: space-between; gap: 4px 12px; margin: -6px 0 -10px; }
+.plan-ask span { flex: 1 1 0; min-width: 0; }
+.plan-ask .link, .plan-form .link { flex: none; display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }
+.plan-form { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding: 12px 14px 4px; border-radius: 12px; background: var(--panel); }
+.plan-form label { font-size: 13.5px; font-weight: 600; color: var(--ink2); }
+.plan-row { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; }
+.plan-form input { flex: 1 1 150px; min-width: 0; min-height: 46px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--paper); color: var(--ink); padding: 6px 10px; font-family: var(--font-fr); font-size: 16px; }
+.plan-form .btn.sm { min-height: 46px; padding-inline: 20px; }
+.plan-msg { color: var(--bad); }
+
+/* readiness: a slip of notebook paper with the margin line; the state is rubber-stamped */
+.rd { position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px 14px 12px 32px; border-radius: 6px; background: var(--paper); box-shadow: 0 0 0 1px var(--line), 0 6px 18px -10px var(--shade); }
+.rd::before { content: ""; position: absolute; top: 0; bottom: 0; left: 18px; width: 1.5px; background: var(--margin); opacity: .8; }
+.rd-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px; }
+.rd-head h2 { font-size: 15px; letter-spacing: .04em; }
+.rd-head span { font-size: 12.5px; color: var(--ink2); white-space: nowrap; }
+.rd-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.rd-num { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 7px; min-width: 0; }
+.rd-q { margin-left: 10px; font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--ink2); white-space: nowrap; }
+.rd-num b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 46px; font-weight: 700; line-height: .95; letter-spacing: -.04em; }
+.rd-num small { font-family: var(--font-fr); font-variant-numeric: tabular-nums; font-size: 14.5px; color: var(--ink2); white-space: nowrap; }
+.rd.go .rd-num b { padding: 0 5px; margin-left: -5px; background: linear-gradient(transparent 16%, var(--hl) 16%, var(--hl) 90%, transparent 90%); color: var(--on-hl); border-radius: 2px; }
+.rd-state { flex: none; margin: 0 2px 5px 0; padding: 3px 9px; border-radius: 5px; font-size: 14.5px; font-weight: 700; line-height: 1.45; letter-spacing: .08em; white-space: nowrap; color: var(--ink2); box-shadow: inset 0 0 0 1.5px currentColor; transform: rotate(-4deg); }
+.rd.near .rd-state { color: var(--blue); }
+.rd.go .rd-state { color: var(--ok); }
+.rd-scale { position: relative; height: 8px; margin: 6px 0 4px; border-radius: 99px; background: var(--rule); }
+.rd-scale i { display: block; height: 100%; max-width: 100%; border-radius: 99px; background: var(--blue); }
+.rd.go .rd-scale i { background: var(--ok); }
+.rd-pass { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+.rd-pass em { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); padding: 0 4px; border-radius: 2px; background: var(--hl); color: var(--on-hl); font-family: var(--font-num); font-style: normal; font-size: 11px; font-weight: 700; line-height: 1.35; }
+.rd-line { font-size: 13.5px; line-height: 1.55; }
+.rd-weak { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.rd-weak p { display: flex; flex-direction: column; min-width: 0; }
+.rd-weak .small { line-height: 1.4; }
+.rd-weak b { font-size: 15.5px; font-weight: 700; line-height: 1.4; }
+.rd-weak .btn { flex: none; min-height: 44px; padding-inline: 20px; }
+.rd-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 14px; padding-top: 8px; border-top: 1px solid var(--rule); }
+.rd-foot > p { flex: 1 1 0; min-width: 0; }
+.rd-foot .hero-fact { flex-basis: 100%; }
+.rd-foot .small { line-height: 1.5; }
+.rd-foot > .small { flex-basis: 100%; }
+.rd-why { display: inline-block; padding: 14px 8px 14px 0; margin: -14px 0; font-size: 13.5px; line-height: inherit; white-space: nowrap; }
+.rd-how { flex: 0 0 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; font-size: 13.5px; line-height: 1.6; color: var(--ink2); }
+.rd-how li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--rule); color: var(--ink); }
+.rd-how li:last-child { border-bottom: 1px solid var(--rule); }
+.rd-how li b { flex: none; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 700; }
+.rd-invite { font-size: 15px; line-height: 1.6; }
+.rd-invite .small { display: block; margin-top: 2px; }
+.rd-empty .rd-foot { border-top: 0; padding-top: 0; }
+/* the same estimate on the result page of a mock exam */
+.rd-next { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rd-next p { font-size: 15px; line-height: 1.65; }
+.rd-next p b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 700; }
+@media (max-width: 359px) {
+  .rd { padding: 12px 12px 12px 26px; }
+  .rd::before { left: 13px; }
+  .rd-num b { font-size: 40px; }
+  .rd-weak .btn { padding-inline: 16px; }
+}
 /* ---- offer (unlock page and pay block) ---- */
 /* the price is the one thing gone over with the highlighter */
 .price { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }

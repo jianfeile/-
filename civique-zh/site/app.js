@@ -95,6 +95,182 @@
   }
   function mistakes() { return pool().filter(function (q) { return inMistakes(q.id); }); }
 
+  // ---------------------------------------------------------------- exam date, daily goal, readiness
+  // S.examDate: 'YYYY-MM-DD' or ''. S.days: { 'YYYY-MM-DD': [answers given in practice that day, questions newly mastered that day] }.
+  var GOAL = { def: 20, min: 10, max: 60, keep: 30 };
+  var GUESS = 0.25;                   // four options: a question not yet mastered is still right one time in four
+  var READY = { near: 28, from: SET }; // "close" from 28; no estimate before one set's worth of answers
+  function isoDay(d) { return d.getFullYear() + '-' + (d.getMonth() < 9 ? '0' : '') + (d.getMonth() + 1) + '-' + (d.getDate() < 10 ? '0' : '') + d.getDate(); }
+  function dayAt(iso) { var p = String(iso).split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }
+  function today() { return isoDay(new Date()); }
+  function planTidy() {
+    if (typeof S.examDate !== 'string' || !/^\d{4}-\d\d-\d\d$/.test(S.examDate) || isoDay(dayAt(S.examDate)) !== S.examDate) S.examDate = '';
+    var old = S.days && typeof S.days === 'object' ? S.days : {}, limit = new Date(), days = {};
+    limit.setDate(limit.getDate() - GOAL.keep);
+    limit = isoDay(limit);
+    Object.keys(old).forEach(function (k) {
+      if (/^\d{4}-\d\d-\d\d$/.test(k) && k > limit && Array.isArray(old[k])) days[k] = [Number(old[k][0]) || 0, Number(old[k][1]) || 0];
+    });
+    S.days = days;
+  }
+  // an answer given in practice: the question's record, and today's count
+  function practised(id, ok) {
+    var was = mastered(id);
+    record(id, ok);
+    planTidy();
+    var d = S.days[today()] || [0, 0];
+    d[0]++;
+    if (ok && !was) d[1]++;
+    if (!ok && was && d[1] > 0) d[1]--;
+    S.days[today()] = d;
+  }
+  function daysLeft() {
+    if (!S.examDate) return null;
+    return Math.round((dayAt(S.examDate) - dayAt(today())) / 864e5);
+  }
+  function weekDays() {
+    var d = new Date(), n = 0, back = (d.getDay() + 6) % 7;       // Monday starts the week
+    for (var i = 0; i <= back; i++) { var day = (S.days || {})[isoDay(d)]; if (day && day[0] > 0) n++; d.setDate(d.getDate() - 1); }
+    return n;
+  }
+  // today's target: what is still to master in the questions this device can practise, spread over the days left
+  function plan() {
+    var t = totals(), day = (S.days || {})[today()] || [0, 0], left = daysLeft();
+    var todo = t.have - t.done, base = todo + day[1];              // what was still to master this morning
+    var live = left !== null && left >= 0, per = live ? Math.ceil(base / Math.max(1, left)) : GOAL.def;
+    var goal = Math.min(base, Math.max(GOAL.min, Math.min(GOAL.max, per)));
+    return { left: left, live: live, done: day[0], goal: goal, todo: todo, have: t.have, locked: t.total - t.have, over: live && per > GOAL.max, week: weekDays() };
+  }
+  // expected right answers out of 40 if the exam were today: per theme and per kind of question,
+  // quota x (share mastered + share not mastered x guess rate). The share is taken on the full bank.
+  function readiness() {
+    var m = DB.free.meta.counts[S.target], p = pool(), r = { est: 0, cap: 0, seen: 0, rows: [], weak: null, total: 0, have: p.length };
+    p.forEach(function (q) { if (S.stats[q.id]) r.seen++; });
+    THEMES.forEach(function (th) {
+      var row = { id: th.id, zh: th.zh, n: th.k + th.s, est: 0, todo: 0 };
+      [['c', th.k, m[th.id].c], ['s', th.s, m[th.id].s]].forEach(function (x) {
+        r.total += x[2];
+        if (!x[1]) return;
+        var mine = p.filter(function (q) { return q.t === th.id && q.k === x[0]; });
+        var done = mine.filter(function (q) { return mastered(q.id); }).length;
+        var share = x[2] ? Math.min(1, done / x[2]) : 0, open = x[2] ? Math.min(1, mine.length / x[2]) : 0;
+        row.est += x[1] * (share + (1 - share) * GUESS);
+        r.cap += x[1] * (open + (1 - open) * GUESS);
+        row.todo += mine.length - done;
+      });
+      r.est += row.est;
+      r.rows.push(row);
+    });
+    // the weakest theme, among those that still have something to practise when there is one
+    r.rows.forEach(function (row) {
+      var w = r.weak;
+      if (!w || (row.todo > 0 && !w.todo) || ((row.todo > 0) === (w.todo > 0) && row.est / row.n < w.est / w.n)) r.weak = row;
+    });
+    r.n = Math.round(r.est);
+    r.capN = Math.floor(r.cap);
+    r.ready = r.seen >= READY.from;
+    r.state = r.n >= EXAM.pass ? 'go' : (r.n >= READY.near ? 'near' : 'low');
+    return r;
+  }
+  function one(x) { return String(Math.round(x * 10) / 10); }
+  function lastExam() {
+    var mine = S.exams.filter(function (e) { return e.target === S.target && e.n > 0; });
+    var run = mine.filter(function (e) { return !e.mini; });
+    if (!run.length) run = mine;
+    if (!run.length) return null;
+    return {
+      last: run.reduce(function (a, e) { return e.ts > a.ts ? e : a; }),
+      best: run.reduce(function (a, e) { return e.score > a.score ? e : a; })
+    };
+  }
+  function planBlock() {
+    var p = plan(), hit = p.goal > 0 && p.done >= p.goal, out = '<div class="plan' + (hit ? ' hit' : '') + '">';
+    var when = '';
+    if (p.left !== null) {
+      when = '<button class="plan-date" data-a="plan-edit" aria-label="修改考试日期">' +
+        (p.left > 0 ? '<span>还有 <b>' + p.left + '</b> 天</span>' : '<span>' + (p.left === 0 ? '就是今天' : '日期已过') + '</span>') + '<i aria-hidden="true">改</i></button>';
+    }
+    out += '<div class="plan-top"><p class="plan-now">今天 <b>' + p.done + '</b>' + (p.goal ? ' / ' + p.goal : '') + ' 题' +
+      (hit ? '<span class="plan-ok">今天的目标完成了</span>' : (p.week > 1 ? '<span class="plan-week">本周练了 ' + p.week + ' 天</span>' : '')) + '</p>' + when + '</div>';
+    if (p.goal) out += bar(Math.min(p.done, p.goal), p.goal, hit ? 'ok' : '');
+    if (ui.planOpen) {
+      out += '<form id="planform" class="plan-form"><label for="examdate">正式考试的日期</label>' +
+        '<div class="plan-row"><input type="date" id="examdate" name="examdate" min="' + today() + '" value="' + esc(S.examDate || '') + '">' +
+        '<button class="btn sm" type="submit">保存</button></div>' +
+        (ui.planMsg ? '<p class="small plan-msg" role="alert">' + esc(ui.planMsg) + '</p>' : '') +
+        '<div class="plan-row">' + (S.examDate ? '<button class="link" type="button" data-a="plan-clear">清除日期</button>' : '') +
+        '<button class="link" type="button" data-a="plan-edit">取消</button></div></form>';
+    } else if (p.left === null) {
+      out += '<p class="small plan-ask"><span>考试是哪天？设一个日期，帮你排每天做多少题</span><button class="link" data-a="plan-edit">设日期</button></p>';
+    } else if (p.left < 0) {
+      out += '<p class="small plan-ask"><span>你设的考试日期（' + (dayAt(S.examDate).getMonth() + 1) + '月' + dayAt(S.examDate).getDate() + '日）已经过了。</span>' +
+        '<button class="link" data-a="plan-edit">改日期</button><button class="link" data-a="plan-clear">清除</button></p>';
+    } else {
+      var note;
+      if (!p.todo) note = unlocked() ? '全部题目都已掌握，可以用模拟考试保持手感。' : '已开放的 ' + p.have + ' 题都已掌握。';
+      else if (p.over) note = '还有 ' + p.todo + ' 题没掌握，每天 ' + GOAL.max + ' 题也练不完，先练最弱的主题。';
+      else note = (unlocked() ? '' : '开放的题') + '还有 ' + p.todo + ' 题没掌握' + (unlocked() ? '。' : '，');
+      if (!unlocked()) note += '另有 ' + p.locked + ' 题解锁后才能练。';
+      out += '<p class="small plan-note">' + note + '</p>';
+    }
+    return out + '</div>';
+  }
+  function readyBlock() {
+    var r = readiness(), x = lastExam(), out = '<div class="rd' + (r.ready ? ' ' + r.state : ' rd-empty') + '">';
+    out += '<div class="rd-head"><h2>把握度' + (r.ready ? '<span class="rd-q">现在去考，大概能对</span>' : '') + '</h2><span>' + (r.ready ? '估算，不是保证' : '现在去考，大概能对多少题') + '</span></div>';
+    if (!r.ready) {
+      out += '<p class="rd-invite">做几组题之后，这里会估算你现在去考能对多少题。' +
+        (r.seen ? '<span class="small">已答 ' + r.seen + ' 题，再答 ' + (READY.from - r.seen) + ' 题就有估算。</span>' : '') + '</p>';
+    } else {
+      var label = { low: '还不够', near: '接近', go: '可以去考' }[r.state];
+      out += '<div class="rd-main"><p class="rd-num"><b>' + r.n + '</b><small>/ ' + EXAM.n + ' 题</small></p>' +
+        '<span class="rd-state">' + label + '</span></div>' +
+        '<div class="rd-scale" role="img" aria-label="估算 ' + r.n + ' / ' + EXAM.n + '，及格线 ' + EXAM.pass + '"><i style="width:' + (r.est / EXAM.n * 100).toFixed(1) + '%"></i>' +
+        '<span class="rd-pass" style="left:' + (EXAM.pass / EXAM.n * 100) + '%"><em>' + EXAM.pass + '</em></span></div>';
+      if (r.state === 'go') out += '<p class="rd-line">估算已过及格线，用一次<a href="#exam">完整模拟考试</a>确认。</p>';
+      var w = r.weak;
+      if (w && w.todo) {
+        out += '<div class="rd-weak"><p><span class="small">最弱的主题 · 估 ' + one(w.est) + ' / ' + w.n + ' 题</span><b>' + w.zh + '</b></p>' +
+          '<button class="btn sm" data-a="start" data-v="' + w.id + '|todo">去练</button></div>';
+      } else if (w && !unlocked()) {
+        out += '<div class="rd-weak"><p><span class="small">已开放的题都已掌握 · 最弱的主题</span><b>' + w.zh + '</b></p><a class="btn sm ghost" href="#unlock">去解锁</a></div>';
+      }
+    }
+    var foot = '';
+    if (x) {
+      var e = x.last;
+      foot += '<p class="hero-fact">最近一次' + (e.mini ? '试考' : '模拟考试') + ' <b' + (e.score >= e.passAt ? ' class="pass"' : '') + '>' + e.score + '/' + e.n + '</b>' +
+        (x.best.score > e.score ? '，最好 ' + x.best.score + '/' + x.best.n : (e.score >= e.passAt ? '，已过及格线' : '，离及格差 ' + (e.passAt - e.score) + ' 题')) + '</p>';
+    }
+    if (r.ready) {
+      foot += '<p class="small">' + (unlocked() ? '' : '按全部 ' + r.total + ' 题算；解锁前只能练其中 ' + r.have + ' 题。') +
+        '<button class="link rd-why" data-a="open" data-v="rd" aria-expanded="' + !!ui.open.rd + '">' + (ui.open.rd ? '收起' : '怎么算的？') + '</button></p>';
+      if (ui.open.rd) {
+        foot += '<div class="rd-how"><p>每个主题：你已掌握的比例 × 正式考试这个主题出的题数；还没掌握的题按四选一、猜对 ' + Math.round(GUESS * 100) + '% 算。知识题和情景题分开算，五个主题加起来是 ' + one(r.est) + ' 题。' +
+          (x ? '模拟考试成绩单独显示，不算进这个数。' : '') + '</p><ul>' + r.rows.map(function (row) {
+            return '<li><span>' + row.zh + '</span><b>' + one(row.est) + ' / ' + row.n + '</b></li>';
+          }).join('') + '</ul>' +
+          (unlocked() ? '' : '<p>没解锁的题按没掌握算：把已开放的 ' + r.have + ' 题全部掌握，估算最多到 ' + r.capN + ' 题。</p>') +
+          '<p>正式考试的选项和情景题跟题库不完全一样，所以这只是估算。</p></div>';
+      }
+    }
+    return out + (foot ? '<div class="rd-foot">' + foot + '</div>' : '') + '</div>';
+  }
+  // on the result page: from this score to what to practise next
+  function resultNext(e) {
+    if (e.target !== S.target) return '';
+    var worst = null;
+    THEMES.forEach(function (t) {
+      var x = e.th && e.th[t.id];
+      if (x && x[1] && x[0] < x[1] && (!worst || x[0] / x[1] < worst.r)) worst = { id: t.id, zh: t.zh, r: x[0] / x[1], got: x[0], n: x[1] };
+    });
+    var r = readiness(), go = worst && counts(worst.id).todo ? worst : (r.weak && r.weak.todo ? r.weak : null);
+    var txt = worst ? '这次丢分最多的主题是「' + worst.zh + '」（' + worst.got + ' / ' + worst.n + '）。' : '这次各个主题都没有丢分。';
+    if (r.ready) txt += '按练习进度估算，现在去正式考试大概能对 <b>' + r.n + '</b> / ' + EXAM.n + ' 题，及格线 ' + EXAM.pass + ' 题（估算，不是保证）。';
+    return '<section class="rd-next"><h2>把握度</h2><p>' + txt + '</p>' +
+      (go ? '<button class="btn wide" data-a="start" data-v="' + go.id + '|todo">去练最弱的主题：' + go.zh + '</button>' : '') + '</section>';
+  }
+
   // ---------------------------------------------------------------- data + unlock
   function getJson(url) {
     return fetch(url).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); });
@@ -259,6 +435,7 @@
     var has = function (id) { return !!DB.byId[id]; };
     if (S.sess) { if (!S.sess.ids || !S.sess.ids.every(has)) S.sess = null; }
     if (S.exam) { if (!S.exam.ids || !S.exam.ids.every(has)) S.exam = null; }
+    planTidy();
   }
 
   // ---------------------------------------------------------------- speech
@@ -571,19 +748,14 @@
     if (ui.netFail) out += '<p class="note warn">已购买的题库这次没有加载出来，目前只显示免费题。请检查网络后刷新页面。</p>';
     if (ui.revoked) out += '<p class="note warn">这台设备保存的解锁码已失效，请重新输入解锁码或联系卖家。</p>';
     var pct = t.total ? Math.round(t.done / t.total * 1000) / 10 : 0, nm = mistakes().length;
-    // best result so far for this exam type: full mock exams first, the short trial exam otherwise
-    var mine = S.exams.filter(function (e) { return e.target === S.target && e.n > 0; });
-    var run = mine.filter(function (e) { return !e.mini; });
-    if (!run.length) run = mine;
-    var best = run.reduce(function (a, e) { return !a || e.score > a.score ? e : a; }, null);
-    out += '<section class="hero home"><div class="row between"><span class="sub">已掌握</span>' + (unlocked() ? '<span class="tag blue">已解锁全部题目</span>' : '<span class="tag">免费试用：开放 ' + t.have + ' 题</span>') + '</div>' +
+    // under the ring: today's goal, then the readiness estimate with the latest mock exam next to it
+    out +='<section class="hero home"><div class="row between"><span class="sub">已掌握</span>' + (unlocked() ? '<span class="tag blue">已解锁全部题目</span>' : '<span class="tag">免费试用：开放 ' + t.have + ' 题</span>') + '</div>' +
       '<div class="hero-main"><div class="ring" role="img" aria-label="已掌握 ' + t.done + ' / ' + t.total + ' 题">' +
       '<svg viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="54"/>' +
       (pct > 0 ? '<circle class="arc" cx="60" cy="60" r="54" pathLength="100" stroke-dasharray="' + pct + ' 100"/>' : '') + '</svg>' +
       '<div class="in" aria-hidden="true"><span class="n">' + t.done + '</span><span class="of">/ ' + t.total + ' 题</span></div></div>' +
       '<div class="hero-acts"><button class="btn" data-a="continue">' + (sess ? '继续练习' : (answeredCount() ? '接着练' : '开始练习')) + '</button><a class="btn ghost" href="#exam">模拟考试</a></div></div>' +
-      (best ? '<p class="hero-fact">' + (best.mini ? '试考' : '模拟考试') + '最好成绩 <b' + (best.score >= best.passAt ? ' class="pass"' : '') + '>' + best.score + '/' + best.n + '</b>' +
-        (best.score >= best.passAt ? '，已过及格线（' + best.passAt + ' 题）' : '，离及格还差 ' + (best.passAt - best.score) + ' 题') + '</p>' : '') +
+      planBlock() + readyBlock() +
       '<div class="quick n3"><a href="#mistakes">' + icon('mistakes') + '错题本' + (nm ? '<b>' + nm + '</b>' : '') + '</a><a href="#words">' + icon('words') + '生词表</a><a href="#sheet">' + icon('sheet') + '考前一页</a></div></section>';
     out += '<section class="stack"><h2>五个主题</h2><div class="themes">' + THEMES.map(function (th) {
       var c = counts(th.id);
@@ -699,7 +871,7 @@
     out += '<section class="stack"><h2>各主题得分</h2><ul class="split">' + THEMES.filter(function (t) { return e.th[t.id]; }).map(function (t) {
       var r = e.th[t.id];
       return '<li><span>' + t.zh + '</span><span class="n' + (r[0] / r[1] < 0.8 ? ' lowv' : '') + '">' + r[0] + ' / ' + r[1] + '</span></li>';
-    }).join('') + '</ul></section>';
+    }).join('') + '</ul></section>' + resultNext(e);
     out += '<section class="stack"><h2>逐题讲解' + (wrong ? '（错 ' + wrong + ' 题）' : '') + '</h2><p class="small">点开任意一题看中文翻译和讲解。答错的题已自动加入错题本。</p><ul class="qlist">' + e.items.map(function (it, i) {
       var q = DB.byId[it[0]];
       if (!q) return '';
@@ -1102,7 +1274,7 @@
       var s = S.sess; if (!s || s.i >= s.ids.length) return;
       var id = s.ids[s.i]; if (s.ans[id] !== undefined) return;
       var before = answeredCount();
-      s.ans[id] = Number(v); record(id, Number(v) === 0); save();
+      s.ans[id] = Number(v); practised(id, Number(v) === 0); save();
       if (before < 10 && answeredCount() >= 10) ping('ten_answers');
       hush(); render();
       var card = document.querySelector('.copy');
@@ -1146,6 +1318,8 @@
     },
     'result-show': function (v) { ui.resultIdx = Number(v); ui.open = {}; go('result'); },
     open: function (v) { ui.open[v] = !ui.open[v]; render(); },
+    'plan-edit': function () { ui.planOpen = !ui.planOpen; ui.planMsg = ''; render(); },
+    'plan-clear': function () { S.examDate = ''; ui.planOpen = false; ui.planMsg = ''; save(); render(); },
     sess: function (v) { ui.open['s' + v] = !sessOpen(Number(v)); render(); },
     reset: function () {
       ui.modal = { title: '清空全部练习记录？', body: '<p>练习进度、错题本和模拟考试成绩都会被清空。解锁状态不受影响。</p>', actions: [{ label: '清空', a: 'reset-yes', cls: 'ghost' }, { label: '取消', a: 'close' }] };
@@ -1162,7 +1336,7 @@
         ui.geoBusy = false; ui.geoMsg = '没能取得位置（浏览器没有授权定位，或者这里用不了）。可以直接输入城市、省号或邮编。'; render();
       }, { timeout: 10000, maximumAge: 600000 });
     },
-    'reset-yes': function () { S.stats = {}; S.exams = []; S.sess = null; S.exam = null; ui.modal = null; save(); render(true); }
+    'reset-yes': function () { S.stats = {}; S.exams = []; S.days = {}; S.sess = null; S.exam = null; ui.modal = null; save(); render(true); }
   };
   document.addEventListener('click', function (ev) {
     var el = ev.target.closest ? ev.target.closest('[data-a]') : null;
@@ -1206,6 +1380,15 @@
       render();
       var again = document.getElementById('code'); if (again && r !== 'ok') again.value = val;
     });
+  });
+  document.addEventListener('submit', function (ev) {
+    if (ev.target.id !== 'planform') return;
+    ev.preventDefault();
+    var v = (document.getElementById('examdate') || {}).value || '';
+    if (!/^\d{4}-\d\d-\d\d$/.test(v)) ui.planMsg = '请先选一个日期。';
+    else if (v < today()) ui.planMsg = '这一天已经过了，请选今天或之后的日期。';
+    else { S.examDate = v; ui.planOpen = false; ui.planMsg = ''; planTidy(); save(); }
+    render();
   });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && ui.modal) { ui.modal = null; render(); } });
 

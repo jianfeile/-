@@ -516,6 +516,58 @@ if (CODE) {
   await ctx.close();
 
   // ---- 8. wide screen and dark theme
+  // ---- registering for the real exam: steps and the centre finder
+  console.log('registration page');
+  ({ ctx, page } = await fresh({ geolocation: { latitude: 45.764, longitude: 4.8357 }, permissions: ['geolocation'] }));
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="cr"]').click();
+  await page.waitForSelector('.themes');
+  await page.locator('.tabs a[href="#register"]').click();
+  await page.waitForSelector('.chips .chip');
+  check('registration page lists the steps and names the chosen exam', await page.locator('.steps > li').count() === 7 && await page.locator('.steps >> text=十年居留卡').count() >= 1);
+  check('booking links go to the two official organisers', await page.locator('a[href="https://test-civique.fr/inscription"]').count() === 1 && await page.locator('a[href="https://francais.cci-paris-idf.fr/candidat?produit=22"]').count() === 2);
+  check('no sideways scroll on the registration page', await noOverflow(page));
+  await page.locator('#cq').fill('69');
+  await page.waitForSelector('.centre');
+  const lyon = await page.locator('.centre .ca').allInnerTexts();
+  check('a département number lists only that département', lyon.length > 0 && lyon.every((t) => /\b69\d{3}\b/.test(t)), lyon.join(' | '));
+  check('typing keeps the cursor in the search box', await page.evaluate(() => document.activeElement && document.activeElement.id === 'cq'));
+  await page.locator('#cq').fill('巴黎');
+  await page.waitForFunction(() => [...document.querySelectorAll('.centre .ca')].every((e) => /\b75\d{3}\b/.test(e.textContent)) && document.querySelectorAll('.centre').length > 0);
+  check('a Chinese city name works', true);
+  await page.locator('#cq').fill('zzzz');
+  await page.waitForSelector('#clist .note');
+  check('nothing found: says so instead of an empty list', await page.locator('.centre').count() === 0);
+  await page.locator('#cq').fill('');
+  await page.locator('[data-a="geo"]').click();
+  await page.waitForSelector('.centre .tag');
+  const kms = (await page.locator('.centre .tag').allInnerTexts()).map((t) => parseFloat(t.replace(/[^\d.]/g, '')));
+  const first = await page.locator('.centre .ca').first().innerText();
+  check('"use my position" sorts by distance, nearest first', kms.length === 8 && kms.every((k, i) => i === 0 || k >= kms[i - 1]) && kms[0] < 10 && /\b69\d{3}\b/.test(first), kms.join(',') + ' ' + first);
+  await page.locator('[data-a="cmore"]').click();
+  check('"show the rest" opens the whole list', await page.locator('.centre').count() > 200);
+  check('no sideways scroll with centres listed', await noOverflow(page));
+  await shot(page, '25-register');
+  await ctx.close();
+  ({ ctx, page } = await fresh());
+  await page.goto(base + '#register');
+  await page.locator('[data-a="target"]').first().waitFor({ state: 'attached', timeout: 3000 }).catch(() => {});
+  await ctx.close();
+  ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  await page.goto(base + '#register');
+  await page.waitForSelector('.chips .chip');
+  await page.locator('[data-a="geo"]').click();
+  await page.waitForSelector('.msg.bad');
+  check('position refused: explains and keeps the search usable', await page.locator('#cq').count() === 1 && (await page.locator('.msg.bad').innerText()).length > 5);
+  await page.locator('[data-a="cq"]').first().click();
+  await page.waitForSelector('.centre');
+  check('no sideways scroll at 320px with centres and six tabs', await noOverflow(page) && await page.locator('.tabs li').count() === 6);
+  await shot(page, '26-register-320');
+  await ctx.close();
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

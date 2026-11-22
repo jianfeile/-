@@ -233,7 +233,7 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
   padding-left: max(8px, env(safe-area-inset-left, 0px));
   padding-right: max(8px, env(safe-area-inset-right, 0px));
 }
-.tabs ul { max-width: 580px; margin: 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); height: var(--tabs-h); }
+.tabs ul { max-width: 580px; margin: 0 auto; display: grid; grid-template-columns: repeat(6, 1fr); height: var(--tabs-h); }
 .tabs a { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 11.5px; line-height: 1; color: var(--ink2); text-decoration: none; position: relative; }
 .tabs a svg { width: 22px; height: 22px; }
 .tabs a[aria-current="page"] { color: var(--blue); font-weight: 700; }
@@ -317,3 +317,21 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
   .copy { animation: rise .28s ease both; }
   @keyframes rise { from { transform: translateY(6px); opacity: .4; } to { transform: none; opacity: 1; } }
 }
+
+/* registering for the exam: steps and centres */
+.steps { counter-reset: step; display: flex; flex-direction: column; gap: 16px; }
+.steps > li { counter-increment: step; position: relative; padding-left: 40px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--blue-soft); color: var(--blue); font-family: var(--font-num); font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.steps > li > b { font-size: 16px; line-height: 28px; }
+.steps p { font-size: 15px; line-height: 1.7; }
+.steps .facts { font-size: 14.5px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { min-height: 38px; padding: 6px 14px; border-radius: 999px; background: var(--panel); color: var(--ink); font-size: 14.5px; }
+.centres { display: flex; flex-direction: column; gap: 10px; }
+.centre { border-radius: var(--r); background: var(--panel); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.centre .cn { font-size: 15.5px; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; flex: 1 1 0; }
+.centre .ca { font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.centre .cd { font-size: 13px; color: var(--ink2); }
+.clinks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 4px; }
+.clinks a { color: var(--blue); font-weight: 600; font-size: 14px; min-height: 32px; display: inline-flex; align-items: center; }
+.small a { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }

@@ -15,6 +15,7 @@ site/                 要上线的网页，整个文件夹直接部署
   config.js           价格、付款链接、联系方式（卖家自己改）
   data/free.json      免费试用题（明文）
   data/bank.json      完整题库和考点速记（加密，需要解锁码才能打开）
+  data/centres.json   考场名单（France Éducation International 官网公开的名单，免费页面“报名”使用）
   sw.js               离线缓存：打开过一次后，没有网络也能用
 functions/api/unlock.js   付款后自动解锁的函数（Cloudflare Pages Functions）
 server/unlock-core.mjs    函数的全部逻辑，测试时直接调用
@@ -96,6 +97,13 @@ CIVIQUE_CODE=XXXX-XXXX-XXXX node tools/test.cjs        # 跑一遍测试
   机经列表对所有人可见，题目的讲解仍然需要解锁。
 
 免费试用题由 `content/free_ids.json` 决定（首次生成时自动挑选：每个主题每种居留卡 6 道知识题，外加每个有情景题的主题 3 道）。
+
+## 报名页和考场名单
+
+“报名”页写的是从报名到拿证明的流程，并可以按城市、省号、邮编或当前位置查考场。报名和交费只在两家官方考试机构的网站上进行，本站只给出链接。
+`site/data/centres.json` 是 France Éducation International 官网考场地图上法国境内的考场：`asof` 是取数日期，`c` 里每一项是
+`[名称, 街道, 邮编, 城市, 纬度, 经度, 电话, 网站]`（官网坐标明显有误的考场，经纬度留空，不显示距离）。考场会增减，应定期对照官网更新。
+巴黎工商会的考场只能在它的网站上按城市查，没有收录。用户的位置只在浏览器里用来算距离，不上传。
 
 ## 测试
 

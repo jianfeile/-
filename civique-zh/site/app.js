@@ -350,11 +350,12 @@
     about: '<circle cx="12" cy="12" r="8.500"/><path d="M12 11v5.500M12 7.600v.3"/>',
     cards: '<path d="M4 5.500c2.700-1 5.300-.8 8 .7 2.700-1.500 5.300-1.700 8-.7v12.300c-2.700-1-5.300-.8-8 .7-2.700-1.500-5.300-1.700-8-.7z"/><path d="M12 6.200v12.300"/>',
     recall: '<path d="M4.500 5.500h15v10.500h-7.800L7 19.600V16H4.500z"/><path d="M8 9.300h8M8 12.300h5"/>',
+    register: '<path d="M12 20.500s6.500-5.600 6.500-10.500a6.500 6.500 0 0 0-13 0c0 4.900 6.500 10.500 6.500 10.500z"/><circle cx="12" cy="10" r="2.300"/>',
     say: '<path d="M4 10v4h3l4.500 3.500v-11L7 10z"/><path d="M15.500 9a4.200 4.200 0 0 1 0 6M18 6.500a7.600 7.600 0 0 1 0 11"/>'
   };
   function icon(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[n] + '</svg>'; }
   function tabs(active) {
-    var items = [['home', '首页'], ['cards', '速记'], ['exam', '模考'], ['recall', '机经'], ['about', '说明']];
+    var items = [['home', '首页'], ['cards', '速记'], ['exam', '模考'], ['recall', '机经'], ['register', '报名'], ['about', '说明']];
     return '<nav class="tabs" aria-label="主导航"><ul>' + items.map(function (it) {
       return '<li><a href="#' + it[0] + '"' + (active === it[0] ? ' aria-current="page"' : '') + '>' + icon(it[0]) + '<span>' + it[1] + '</span></a></li>';
     }).join('') + '</ul></nav>';
@@ -678,6 +679,98 @@
     if (!unlocked()) out += payBlock('解锁后可以看每道题的讲解');
     return out + '</main>' + tabs('recall');
   }
+  // ---------------------------------------------------------------- registering for the real exam
+  // The centre list is the public list of France Éducation International (data/centres.json). Booking and payment
+  // happen on the organisers' own sites; this page only helps to find the way there.
+  var DEPTS = {'01':'Ain','02':'Aisne','03':'Allier','04':'Alpes-de-Haute-Provence','05':'Hautes-Alpes','06':'Alpes-Maritimes','07':'Ardèche','08':'Ardennes','09':'Ariège','10':'Aube','11':'Aude','12':'Aveyron','13':'Bouches-du-Rhône','14':'Calvados','15':'Cantal','16':'Charente','17':'Charente-Maritime','18':'Cher','19':'Corrèze','2A':'Corse-du-Sud','2B':'Haute-Corse','21':'Côte-d\'Or','22':'Côtes-d\'Armor','23':'Creuse','24':'Dordogne','25':'Doubs','26':'Drôme','27':'Eure','28':'Eure-et-Loir','29':'Finistère','30':'Gard','31':'Haute-Garonne','32':'Gers','33':'Gironde','34':'Hérault','35':'Ille-et-Vilaine','36':'Indre','37':'Indre-et-Loire','38':'Isère','39':'Jura','40':'Landes','41':'Loir-et-Cher','42':'Loire','43':'Haute-Loire','44':'Loire-Atlantique','45':'Loiret','46':'Lot','47':'Lot-et-Garonne','48':'Lozère','49':'Maine-et-Loire','50':'Manche','51':'Marne','52':'Haute-Marne','53':'Mayenne','54':'Meurthe-et-Moselle','55':'Meuse','56':'Morbihan','57':'Moselle','58':'Nièvre','59':'Nord','60':'Oise','61':'Orne','62':'Pas-de-Calais','63':'Puy-de-Dôme','64':'Pyrénées-Atlantiques','65':'Hautes-Pyrénées','66':'Pyrénées-Orientales','67':'Bas-Rhin','68':'Haut-Rhin','69':'Rhône','70':'Haute-Saône','71':'Saône-et-Loire','72':'Sarthe','73':'Savoie','74':'Haute-Savoie','75':'Paris','76':'Seine-Maritime','77':'Seine-et-Marne','78':'Yvelines','79':'Deux-Sèvres','80':'Somme','81':'Tarn','82':'Tarn-et-Garonne','83':'Var','84':'Vaucluse','85':'Vendée','86':'Vienne','87':'Haute-Vienne','88':'Vosges','89':'Yonne','90':'Territoire de Belfort','91':'Essonne','92':'Hauts-de-Seine','93':'Seine-Saint-Denis','94':'Val-de-Marne','95':'Val-d\'Oise','971':'Guadeloupe','972':'Martinique','973':'Guyane','974':'La Réunion','975':'Saint-Pierre-et-Miquelon','976':'Mayotte','977':'Saint-Barthélemy','978':'Saint-Martin','986':'Wallis et Futuna','987':'Polynésie Française','988':'Nouvelle-Calédonie'};
+  var CITY_ZH = { '巴黎': 'paris', '里昂': 'lyon', '马赛': 'marseille', '图卢兹': 'toulouse', '尼斯': 'nice', '南特': 'nantes', '斯特拉斯堡': 'strasbourg', '蒙彼利埃': 'montpellier', '波尔多': 'bordeaux', '里尔': 'lille', '雷恩': 'rennes', '兰斯': 'reims', '格勒诺布尔': 'grenoble', '第戎': 'dijon', '昂热': 'angers', '鲁昂': 'rouen', '奥尔良': 'orleans', '图尔': 'tours', '南锡': 'nancy', '梅斯': 'metz', '克莱蒙费朗': 'clermont ferrand', '亚眠': 'amiens', '贝桑松': 'besancon', '利摩日': 'limoges', '卡昂': 'caen', '凡尔赛': 'versailles', '土伦': 'toulon', '圣艾蒂安': 'saint etienne', '勒阿弗尔': 'le havre', '布雷斯特': 'brest', '勒芒': 'le mans', '普瓦捷': 'poitiers', '佩皮尼昂': 'perpignan', '米卢斯': 'mulhouse', '阿维尼翁': 'avignon', '戛纳': 'cannes', '尼姆': 'nimes', '波城': 'pau', '安纳西': 'annecy', '尚贝里': 'chambery', '特鲁瓦': 'troyes', '拉罗谢尔': 'la rochelle', '艾克斯': 'aix en provence', '留尼汪': '974', '瓜德罗普': '971', '马提尼克': '972', '圭亚那': '973' };
+  var CCI_PRODUCT = { csp: 21, cr: 22, nat: 23 };
+  var centresWait = null;
+  function plain(x) { return String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/œ/g, 'oe').replace(/[^a-z0-9一-鿿]+/g, ' ').trim(); }
+  function deptOf(cp) { return /^9[78]/.test(cp) ? cp.slice(0, 3) : cp.slice(0, 2) === '20' ? (/^20[01]/.test(cp) ? '2A' : '2B') : cp.slice(0, 2); }
+  function loadCentres() {
+    if (DB.centres || centresWait) return;
+    centresWait = (window.CIVIQUE_CENTRES ? Promise.resolve(window.CIVIQUE_CENTRES) : getJson('data/centres.json')).then(function (d) {
+      DB.centres = d.c.map(function (r) {
+        var dep = deptOf(r[2]);
+        return { name: r[0], street: r[1], cp: r[2], city: r[3], lat: r[4], lon: r[5], tel: r[6], web: r[7], dep: dep, ckey: plain(r[3]), key: plain(r[3] + ' ' + r[0] + ' ' + (DEPTS[dep] || '')) };
+      });
+      DB.centresAsOf = d.asof;
+    }).catch(function () { ui.centresFail = true; }).then(function () { centresWait = null; if (route() === 'register') render(); });
+  }
+  function kmBetween(a, b, c, d) {
+    var p = Math.PI / 180, x = Math.pow(Math.sin((c - a) * p / 2), 2) + Math.cos(a * p) * Math.cos(c * p) * Math.pow(Math.sin((d - b) * p / 2), 2);
+    return 12742 * Math.asin(Math.sqrt(x));
+  }
+  function findCentres() {
+    var raw = (ui.cq || '').trim(), q = plain(CITY_ZH[raw] || raw), list = DB.centres, dep = '';
+    if (q) {
+      var up = q.toUpperCase();
+      if (/^\d{5}$/.test(q)) dep = deptOf(q);
+      else if (/^(\d{1,3}|2[ab])$/i.test(q)) dep = /^\d$/.test(q) ? '0' + q : up;
+      if (dep) {
+        var same = list.filter(function (c) { return c.cp === q; });
+        list = same.length ? same : list.filter(function (c) { return c.dep === dep; });
+      } else {
+        var inCity = list.filter(function (c) { return (' ' + c.ckey + ' ').indexOf(' ' + q) >= 0; });   // a city first: "paris" should not bring up a school named after it elsewhere
+        list = inCity.length ? inCity : list.filter(function (c) { return (' ' + c.key + ' ').indexOf(' ' + q) >= 0; });
+      }
+    }
+    if (ui.geo) {
+      list = list.map(function (c) { return { c: c, km: c.lat == null ? null : kmBetween(ui.geo.lat, ui.geo.lon, c.lat, c.lon) }; });
+      list.sort(function (a, b) { return (a.km == null ? 1e9 : a.km) - (b.km == null ? 1e9 : b.km); });
+    } else {
+      list = list.map(function (c) { return { c: c, km: null }; });
+    }
+    return { list: list, q: q, dep: dep };
+  }
+  function centreList() {
+    if (ui.centresFail) return '<p class="note warn">考场名单没有加载出来。请检查网络后刷新，或直接到官方地图上查。</p>';
+    if (!DB.centres) return '<p class="note">正在加载考场名单</p>';
+    var f = findCentres();
+    if (!f.q && !ui.geo) {
+      return '<div class="chips">' + ['巴黎', '里昂', '马赛', '图卢兹', '尼斯', '斯特拉斯堡', '波尔多', '里尔', '南特', '蒙彼利埃'].map(function (c) {
+        return '<button class="chip" data-a="cq" data-v="' + c + '">' + c + '</button>';
+      }).join('') + '</div>';
+    }
+    if (!f.list.length) {
+      return '<p class="note">' + (f.dep ? esc(f.dep + (DEPTS[f.dep] ? ' ' + DEPTS[f.dep] : '')) + ' 省' : '“' + esc(ui.cq) + '”') + '在这份名单里没有考场。可以试试邻近的省号，或者点“用我的位置”找最近的；另一家机构的考场见下面。</p>';
+    }
+    var max = ui.cmore ? f.list.length : 8, shown = f.list.slice(0, max);
+    var head = (f.q ? '找到 ' + f.list.length + ' 个考场' : '离你最近的考场') + (ui.geo && f.q ? '，按距离排列' : '');
+    return '<p class="sub" id="ccount">' + head + '</p><ul class="centres">' + shown.map(function (x) {
+      var c = x.c, addr = (c.street ? c.street + ', ' : '') + c.cp + ' ' + c.city;
+      return '<li class="centre"><div class="row between"><b class="cn" lang="fr">' + esc(c.name) + '</b>' + (x.km != null ? '<span class="tag blue">约 ' + (x.km < 10 ? Math.round(x.km * 10) / 10 : Math.round(x.km)) + ' 公里</span>' : '') + '</div>' +
+        '<p class="ca" lang="fr">' + esc(addr) + '</p><p class="cd">' + esc(c.dep) + (DEPTS[c.dep] ? ' <span lang="fr">' + esc(DEPTS[c.dep]) + '</span>' : '') + '</p><div class="clinks">' +
+        (c.tel ? '<a href="tel:' + esc(c.tel.split('/')[0].replace(/[^\d+]/g, '')) + '">' + esc(c.tel) + '</a>' : '') +
+        (c.web ? '<a href="' + esc(c.web) + '" target="_blank" rel="noopener">考场网站 ↗</a>' : '') +
+        '<a href="https://www.google.com/maps/search/?api=1&amp;query=' + encodeURIComponent(c.name + ', ' + addr) + '" target="_blank" rel="noopener">地图 ↗</a></div></li>';
+    }).join('') + '</ul>' + (f.list.length > max ? '<button class="btn quiet wide" data-a="cmore">显示其余 ' + (f.list.length - max) + ' 个</button>' : '');
+  }
+  function vRegister() {
+    loadCentres();
+    var lv = LEVELS[S.target] ? S.target : '', cci = 'https://francais.cci-paris-idf.fr/candidat?produit=' + (CCI_PRODUCT[lv] || 21);
+    var out = '<main class="wrap">' + brand() + '<section class="stack"><h2>报名考试 · 全流程</h2>' +
+      '<p class="sub">从报名到拿到通过证明的每一步。本站只帮你找到入口：报名和交费都在官方机构的网站上完成，本站不代办、不收报名费。</p>' +
+      '<ol class="steps">' +
+      '<li><b>确认考哪一种</b><p>考试分三种：多年居留卡、十年居留卡、入籍。报名时要选对' + (lv ? '，你在首页选的是「' + LEVELS[lv].zh + '」' : '') + '。选错了，证明可能不能用于你的申请。</p></li>' +
+      '<li><b>准备好这几样</b><p>有效的居留证；居留证上的外国人号码（<span lang="fr">numéro étranger / AGDREF</span>）；一个常用邮箱（账号、通知和成绩都发到这里，记得看垃圾邮件箱）。</p></li>' +
+      '<li><b>选考场，在官网报名</b><p>全法有两家官方指定的考试机构，任选一家，考试内容相同。费用由各考场自己定，每个考场不一样，报名前先问清楚。</p>' +
+      '<ul class="facts"><li><span lang="fr">France Éducation International</span>：官方建议先联系想去的考场，确认场次和费用，再填预报名表；提交后会收到一封邮件，用来创建考生账号。<br><a class="link" href="https://test-civique.fr/inscription" target="_blank" rel="noopener">去填官方预报名表 ↗</a></li>' +
+      '<li>巴黎工商会（<span lang="fr">CCI Paris Île-de-France</span>）：在它的网站上按城市查场次，直接在线报名。<br><a class="link" href="' + cci + '" target="_blank" rel="noopener">去查场次并报名 ↗</a></li></ul></li>' +
+      '<li><b>考试当天</b><p>按准考通知（<span lang="fr">convocation</span>）上的时间到场，带上居留证和准考通知。迟到不能进考场。现场会核对身份、拍照、签名，请当场确认姓名和出生日期没有写错，这些会印在证明上。手机要关机，不能带资料和草稿纸，中途不能离场。</p></li>' +
+      '<li><b>查成绩，下载证明</b><p>成绩在考后一到两天内出来（一家是 12 小时内在考生账号里查看，另一家是 24 到 48 个工作小时内发邮件）。证明是电子版，没有纸质的，长期有效，下载后自己保存好。</p></li>' +
+      '<li><b>没通过怎么办</b><p>可以再报名，次数不限。答对 32 题才算通过，建议模拟考试稳定在 35 题以上再去。</p><a class="link" href="#exam">去做一次模拟考试</a></li>' +
+      '<li><b>提交证明</b><p>办理居留卡或入籍时，把这份通过证明和其他材料一起提交。</p></li></ol></section>';
+    out += '<section class="stack"><h2>找考场</h2>' +
+      '<p class="sub"><span lang="fr">France Éducation International</span> 认可的考场' + (DB.centres ? '，法国境内共 <span class="num">' + DB.centres.length + '</span> 个' : '') + '。</p>' +
+      '<form id="cform" class="field"><input id="cq" class="plain" name="cq" type="search" autocomplete="off" spellcheck="false" placeholder="城市、省号或邮编，如 里昂 / 69" aria-label="城市、省号或邮编" maxlength="40" value="' + esc(ui.cq || '') + '"></form>' +
+      '<button class="btn ghost wide" data-a="geo"' + (ui.geoBusy ? ' disabled' : '') + '>' + (ui.geoBusy ? '正在定位' : ui.geo ? '已按你的位置排序 · 重新定位' : '用我的位置找最近的') + '</button>' +
+      (ui.geoMsg ? '<p class="msg bad" role="status">' + esc(ui.geoMsg) + '</p>' : '') +
+      '<div id="clist" class="stack">' + centreList() + '</div>' +
+      '<p class="small">位置只在你的手机上用来计算距离，不会上传。距离是直线距离。名单取自 France Éducation International 官网' + (DB.centresAsOf ? '（' + DB.centresAsOf + '）' : '') + '，考场会增减，以<a href="https://www.france-education-international.fr/centres-d-examen/carte?type-centre=examen_civique" target="_blank" rel="noopener">官方地图 ↗</a>为准。巴黎工商会的考场不在这份名单里，请在<a href="' + cci + '" target="_blank" rel="noopener">它的网站 ↗</a>上按城市查。</p></section>';
+    return out + disclaimer() + '</main>' + tabs('register');
+  }
   function vAbout() {
     var out = '<main class="wrap">' + brand() + '<section class="stack"><h2>关于公民考试</h2><ul class="facts">' +
       '<li>从 2026 年 1 月 1 日起，第一次申请多年居留卡（<span lang="fr">carte de séjour pluriannuelle</span>）或十年居留卡（<span lang="fr">carte de résident</span>）要提交公民考试（<span lang="fr">examen civique</span>）的通过证明。续签不需要。</li>' +
@@ -694,6 +787,7 @@
       '<li><a href="https://formation-civique.interieur.gouv.fr/examen-civique/" target="_blank" rel="noopener">内政部：考试说明、官方题目清单和讲义（免费）↗</a></li>' +
       '<li><a href="https://www.service-public.gouv.fr/particuliers/vosdroits/F39530" target="_blank" rel="noopener">service-public：居留卡谁需要考、怎么报名 ↗</a></li>' +
       '<li><a href="https://www.service-public.gouv.fr/particuliers/vosdroits/F39426" target="_blank" rel="noopener">service-public：入籍的公民考试 ↗</a></li>' +
+      '<li><a href="#register">报名流程和考场查询（本站整理）</a></li>' +
       '<li><a href="https://francais.cci-paris-idf.fr/candidat?produit=21" target="_blank" rel="noopener">考试机构一：巴黎工商会（CCI Paris Île-de-France）↗</a></li>' +
       '<li><a href="https://test-civique.fr/inscription" target="_blank" rel="noopener">考试机构二：France Éducation International 报名 ↗</a></li></ul>' +
       '<p class="small">报名、考点和费用以两家考试机构的网站为准。</p></section>';
@@ -737,7 +831,7 @@
   }
 
   // ---------------------------------------------------------------- routing + render
-  var VIEWS = { home: vHome, quiz: vQuiz, exam: vExam, result: vResult, mistakes: vMistakes, words: vWords, cards: vCards, recall: vRecall, about: vAbout, unlock: vUnlock };
+  var VIEWS = { home: vHome, quiz: vQuiz, exam: vExam, result: vResult, mistakes: vMistakes, words: vWords, cards: vCards, recall: vRecall, register: vRegister, about: vAbout, unlock: vUnlock };
   function route() { var h = (location.hash || '').replace(/^#/, ''); return VIEWS[h] ? h : 'home'; }
   function go(name) { if (route() === name) render(true); else location.hash = name; }
   function render(top) {
@@ -843,6 +937,17 @@
       ui.modal = { title: '清空全部练习记录？', body: '<p>练习进度、错题本和模拟考试成绩都会被清空。解锁状态不受影响。</p>', actions: [{ label: '清空', a: 'reset-yes', cls: 'ghost' }, { label: '取消', a: 'close' }] };
       render();
     },
+    cq: function (v) { ui.cq = v; ui.cmore = false; render(); },
+    cmore: function () { ui.cmore = true; var box = document.getElementById('clist'); if (box) box.innerHTML = centreList(); },
+    geo: function () {
+      if (!navigator.geolocation) { ui.geoMsg = '这个浏览器不支持定位。可以直接输入城市、省号或邮编。'; render(); return; }
+      ui.geoBusy = true; ui.geoMsg = ''; render();
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        ui.geoBusy = false; ui.geo = { lat: pos.coords.latitude, lon: pos.coords.longitude }; ui.cmore = false; render();
+      }, function () {
+        ui.geoBusy = false; ui.geoMsg = '没能取得位置（浏览器没有授权定位，或者这里用不了）。可以直接输入城市、省号或邮编。'; render();
+      }, { timeout: 10000, maximumAge: 600000 });
+    },
     'reset-yes': function () { S.stats = {}; S.exams = []; S.sess = null; S.exam = null; ui.modal = null; save(); render(true); }
   };
   document.addEventListener('click', function (ev) {
@@ -853,7 +958,13 @@
     ev.preventDefault();
     ACT[a](el.getAttribute('data-v'), el, ev);
   });
+  document.addEventListener('input', function (ev) {
+    if (ev.target.id !== 'cq') return;
+    ui.cq = ev.target.value; ui.cmore = false;
+    var box = document.getElementById('clist'); if (box) box.innerHTML = centreList();
+  });
   document.addEventListener('submit', function (ev) {
+    if (ev.target.id === 'cform') { ev.preventDefault(); var cq = document.getElementById('cq'); if (cq) cq.blur(); return; }
     if (ev.target.id === 'mailform') {
       ev.preventDefault();
       if (ui.busy) return;

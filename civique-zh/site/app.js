@@ -356,6 +356,7 @@
     cards: '<path d="M4 5.500c2.700-1 5.300-.8 8 .7 2.700-1.500 5.300-1.700 8-.7v12.300c-2.700-1-5.300-.8-8 .7-2.700-1.500-5.300-1.700-8-.7z"/><path d="M12 6.200v12.300"/>',
     recall: '<path d="M4.500 5.500h15v10.500h-7.800L7 19.600V16H4.500z"/><path d="M8 9.300h8M8 12.300h5"/>',
     register: '<path d="M12 20.500s6.500-5.600 6.500-10.500a6.500 6.500 0 0 0-13 0c0 4.900 6.500 10.500 6.500 10.500z"/><circle cx="12" cy="10" r="2.300"/>',
+    sheet: '<path d="M6.500 3.500h8l3 3v14h-11z"/><path d="M14.500 3.500v3h3M9 10.500h6M9 14h6M9 17.500h3.500"/>',
     say: '<path d="M4 10v4h3l4.500 3.500v-11L7 10z"/><path d="M15.500 9a4.200 4.200 0 0 1 0 6M18 6.500a7.600 7.600 0 0 1 0 11"/>'
   };
   function icon(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[n] + '</svg>'; }
@@ -483,7 +484,7 @@
       '<div class="hero-acts"><button class="btn" data-a="continue">' + (sess ? '继续练习' : (answeredCount() ? '接着练' : '开始练习')) + '</button><a class="btn ghost" href="#exam">模拟考试</a></div></div>' +
       (best ? '<p class="hero-fact">' + (best.mini ? '试考' : '模拟考试') + '最好成绩 <b' + (best.score >= best.passAt ? ' class="pass"' : '') + '>' + best.score + '/' + best.n + '</b>' +
         (best.score >= best.passAt ? '，已过及格线（' + best.passAt + ' 题）' : '，离及格还差 ' + (best.passAt - best.score) + ' 题') + '</p>' : '') +
-      '<div class="quick"><a href="#mistakes">' + icon('mistakes') + '错题本' + (nm ? '<b>' + nm + '</b>' : '') + '</a><a href="#words">' + icon('words') + '生词表</a></div></section>';
+      '<div class="quick n3"><a href="#mistakes">' + icon('mistakes') + '错题本' + (nm ? '<b>' + nm + '</b>' : '') + '</a><a href="#words">' + icon('words') + '生词表</a><a href="#sheet">' + icon('sheet') + '考前一页</a></div></section>';
     out += '<section class="stack"><h2>五个主题</h2><div class="themes">' + THEMES.map(function (th) {
       var c = counts(th.id);
       return '<button class="theme' + (c.total && c.done >= c.total ? ' full' : '') + '" data-a="theme" data-v="' + th.id + '"><span class="ti">' + icon(th.id) + '</span>' +
@@ -506,6 +507,7 @@
       (c.situ ? '<li><span class="k">情景练习题</span><span class="v"><b>' + c.situ + '</b> 题</span></li>' : '') +
       '<li><span class="k">正式考试</span><span class="v">这个主题出 <b>' + (th.k + th.s) + '</b> 题' + (th.s ? '（其中 ' + th.s + ' 题情景题）' : '') + '</span></li>' +
       '<li><span class="k">你的进度</span><span class="v">已掌握 <b>' + c.done + '</b> / ' + c.total + (unlocked() ? '' : '，免费开放 ' + c.have + ' 题') + '</span></li></ul>' +
+      (c.situ ? '<p class="small">情景题怎么判断：见<button class="link" data-a="goto" data-v="sheet">考前一页</button></p>' : '') +
       (!unlocked() && !c.todo ? '<p class="note blue">这个主题的免费题已经全部掌握，其余 ' + (c.total - c.have) + ' 题解锁后可以练。</p>' : '');
     ui.modal = { title: th.zh, body: body, actions: acts };
   }
@@ -644,7 +646,7 @@
     return out + '</main>' + tabs('cards');
   }
   function studyNav(active) {
-    return '<div class="seg n2" role="group" aria-label="速记和生词"><a href="#cards"' + (active === 'cards' ? ' aria-current="page"' : '') + '><b>考点速记</b></a><a href="#words"' + (active === 'words' ? ' aria-current="page"' : '') + '><b>生词表</b></a></div>';
+    return '<div class="seg n3 study" role="group" aria-label="速记、生词和考前一页"><a href="#cards"' + (active === 'cards' ? ' aria-current="page"' : '') + '><b>考点速记</b></a><a href="#words"' + (active === 'words' ? ' aria-current="page"' : '') + '><b>生词表</b></a><a href="#sheet"' + (active === 'sheet' ? ' aria-current="page"' : '') + '><b>考前一页</b></a></div>';
   }
   // 考点速记: the official sheets (French only) condensed into Chinese cards
   function vCards() {
@@ -667,6 +669,35 @@
     });
     if (!unlocked()) out += payBlock('解锁全部 ' + DB.cards.length + ' 张考点速记');
     return out + '</main>' + tabs('cards');
+  }
+  // 考前一页: the numbers, years and names worth a last look the night before (data/sheet.json). Free for everyone.
+  var sheetWait = null, canPrint = typeof window.print === 'function' && !/MicroMessenger/i.test(navigator.userAgent);
+  function loadSheet() {
+    if (DB.sheet || sheetWait || ui.sheetFail) return;
+    sheetWait = (window.CIVIQUE_SHEET ? Promise.resolve(window.CIVIQUE_SHEET) : getJson('data/sheet.json')).then(function (d) { DB.sheet = d; })
+      .catch(function () { ui.sheetFail = true; }).then(function () { sheetWait = null; if (route() === 'sheet') render(); });
+  }
+  function vSheet() {
+    loadSheet();
+    var know = 0, situ = 0;
+    THEMES.forEach(function (t) { know += t.k; situ += t.s; });
+    var out = '<main class="wrap sheetpage">' + brand() + studyNav('sheet') +
+      '<section class="stack sh-top"><h2>考前一页</h2><p class="sub">考前最后看一眼的数字、年份和人名，按官方题目清单和讲义整理。它只帮你记，不能代替做题。<a class="link" href="#home">去练题</a></p></section>' +
+      '<ul class="sh-exam" aria-label="考试本身"><li><b>' + EXAM.n + '</b><span>题单选</span></li><li><b>' + EXAM.min + '</b><span>分钟</span></li>' +
+      '<li class="pass"><b>' + EXAM.pass + '</b><span>题及格</span></li><li><b>' + know + '<i>+</i>' + situ + '</b><span>知识 + 情景</span></li></ul>';
+    var d = DB.sheet;
+    if (!d) return out + (ui.sheetFail ? '<p class="note warn">这一页没有加载出来，请检查网络后刷新页面。</p>' : '<p class="sub center">正在加载…</p>') + disclaimer() + '</main>' + tabs('cards');
+    out += '<div class="sh-grid">' + d.groups.map(function (g) {
+      return '<section class="sh-card' + (g.wide ? ' wide' : '') + '"><h3>' + esc(g.title) + '</h3><ul>' + g.items.map(function (it) {
+        return '<li><b class="k' + (/^[\d约]/.test(it.k) ? ' n' : '') + (it.hl ? ' hl' : '') + '">' + esc(it.k) + '</b><span class="v">' + esc(it.v) + (it.fr ? ' <i lang="fr">' + esc(it.fr) + '</i>' : '') + '</span></li>';
+      }).join('') + '</ul></section>';
+    }).join('') + '</div>';
+    if (d.rule) {
+      out += '<section class="sh-rule" id="sh-rule"><h3>' + esc(d.rule.title) + '</h3><p>' + esc(d.rule.lead) + '</p><ol>' +
+        d.rule.points.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol></section>';
+    }
+    out += '<p class="small sh-asof">整理于 ' + esc(d.asof) + '。' + (canPrint ? '<button class="link" data-a="print">打印或存成 PDF</button>' : '') + '</p>';
+    return out + disclaimer() + '</main>' + tabs('cards');
   }
   function lockMark() { return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5.500" y="10.500" width="13" height="9" rx="2"/><path d="M8.500 10.500V8a3.500 3.500 0 0 1 7 0v2.500"/></svg>'; }
   // 机经: what candidates said they were asked, by exam month. Nothing identifies who said it.
@@ -911,7 +942,7 @@
   }
 
   // ---------------------------------------------------------------- routing + render
-  var VIEWS = { home: vHome, quiz: vQuiz, exam: vExam, result: vResult, mistakes: vMistakes, words: vWords, cards: vCards, recall: vRecall, register: vRegister, about: vAbout, unlock: vUnlock };
+  var VIEWS = { home: vHome, quiz: vQuiz, exam: vExam, result: vResult, mistakes: vMistakes, words: vWords, cards: vCards, sheet: vSheet, recall: vRecall, register: vRegister, about: vAbout, unlock: vUnlock };
   function route() { var h = (location.hash || '').replace(/^#/, ''); return VIEWS[h] ? h : 'home'; }
   function go(name) { if (route() === name) render(true); else location.hash = name; }
   function render(top) {
@@ -937,6 +968,7 @@
     target: function (v) { if (!LEVELS[v]) return; if (S.target !== v) { S.target = v; S.sess = null; } save(); render(); },
     goto: function (v) { ui.modal = null; go(v); },
     close: function () { ui.modal = null; render(); },
+    print: function () { window.print(); },
     locked: function () {
       ui.modal = { title: '这部分需要解锁', body: '<p>解锁后可以看全部题目的讲解、全部考点速记和完整模拟考试。</p>', actions: [{ label: '去解锁', a: 'goto', v: 'unlock' }, { label: '关闭', a: 'close', cls: 'quiet' }] };
       render();

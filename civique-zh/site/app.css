@@ -329,6 +329,102 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
 .clinks a { color: var(--blue); font-weight: 600; font-size: 14px; min-height: 32px; display: inline-flex; align-items: center; }
 .small a { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
 
+/* ---- cram sheet ---- */
+/* 考前一页: the page people screenshot. Every group is a small sheet of ruled paper; text sits on the rules. */
+.quick.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.quick.n3 a { gap: 6px; padding: 0 4px; white-space: nowrap; }
+.seg.study a { padding: 6px 4px; }
+.sh-top .sub .link { margin-left: 4px; white-space: nowrap; }
+.sh-exam { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line); }
+.sh-exam li { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 2px 11px; text-align: center; min-width: 0; }
+.sh-exam li + li { box-shadow: -1px 0 0 var(--line); }
+.sh-exam b { font-family: var(--font-num); font-weight: 700; font-size: 27px; line-height: 1.15; letter-spacing: -.02em; }
+.sh-exam b i { font-style: normal; font-weight: 400; color: var(--ink2); padding: 0 1px; }
+.sh-exam span { font-size: 12px; line-height: 1.3; color: var(--ink2); }
+.sh-exam .pass b { padding: 0 6px; border-radius: 2px; background: linear-gradient(transparent 14%, var(--hl) 14%, var(--hl) 88%, transparent 88%); color: var(--on-hl); }
+.sh-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+.sh-card {
+  --lh: 25px;
+  min-width: 0; border-radius: 6px; padding: 9px 10px calc(var(--lh) - 8px) 11px;
+  background-color: var(--paper);
+  background-image: linear-gradient(to bottom, transparent calc(var(--lh) - 1px), var(--rule) calc(var(--lh) - 1px));
+  background-size: 100% var(--lh);
+  background-position: 0 12px;
+  box-shadow: 0 0 0 1px var(--line), 0 6px 16px -10px var(--shade);
+}
+.sh-card.wide { grid-column: 1 / -1; }
+.sh-card h3 { font-size: 13px; font-weight: 700; line-height: var(--lh); letter-spacing: .08em; color: var(--blue); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sh-card li { line-height: var(--lh); min-width: 0; overflow-wrap: anywhere; }
+.sh-card .k { font-size: 15.5px; font-weight: 700; line-height: 0; margin-right: 7px; }
+.sh-card .k.n { font-family: var(--font-num); font-size: 19px; letter-spacing: -.03em; white-space: nowrap; }
+.sh-card .k.hl { padding: 0 4px; margin-left: -4px; border-radius: 2px; background: linear-gradient(transparent 16%, var(--hl) 16%, var(--hl) 88%, transparent 88%); color: var(--on-hl); }
+.sh-card .v { font-size: 13.5px; line-height: 0; }
+.sh-card .v i { font-style: normal; font-size: 12px; color: var(--ink2); margin-left: 2px; display: inline-block; line-height: var(--lh); vertical-align: baseline; }
+.sh-card.wide li { display: flex; align-items: baseline; column-gap: 12px; }
+.sh-card.wide .k { flex: 0 0 5.2em; margin-right: 0; line-height: var(--lh); }
+.sh-card.wide .v { flex: 1 1 0; min-width: 0; line-height: var(--lh); }
+.sh-rule {
+  --lh: 27px;
+  position: relative; border-radius: 6px; padding: 11px 14px calc(var(--lh) - 10px) 40px;
+  background-color: var(--paper);
+  background-image: linear-gradient(to bottom, transparent calc(var(--lh) - 1px), var(--rule) calc(var(--lh) - 1px));
+  background-size: 100% var(--lh);
+  background-position: 0 14px;
+  box-shadow: 0 0 0 1px var(--line), 0 6px 18px -8px var(--shade);
+  scroll-margin-top: 16px;
+}
+.sh-rule::before { content: ""; position: absolute; top: 0; bottom: 0; left: 28px; width: 1.5px; background: var(--margin); opacity: .8; }
+.sh-rule h3 { font-size: 17px; font-weight: 700; line-height: var(--lh); }
+.sh-rule p, .sh-rule li { font-size: 14.5px; line-height: var(--lh); }
+.sh-rule p { color: var(--ink2); }
+.sh-rule ol { counter-reset: shr; }
+.sh-rule ol li { counter-increment: shr; position: relative; }
+.sh-rule ol li::before { content: counter(shr); position: absolute; left: -32px; top: 0; width: 20px; text-align: center; font-family: var(--font-num); font-weight: 700; font-size: 15px; color: var(--margin); }
+.sh-asof { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.sh-asof .link { min-height: 44px; display: inline-flex; align-items: center; }
+@media (max-width: 339px) {
+  .sh-grid { grid-template-columns: minmax(0, 1fr); }
+  .sh-exam b { font-size: 23px; }
+  .quick.n3 a { font-size: 14px; gap: 4px; }
+  .quick.n3 a svg { width: 18px; height: 18px; }
+}
+@media (min-width: 480px) {
+  .sh-grid { gap: 12px; }
+  .sh-card { padding-left: 14px; padding-right: 14px; }
+  .sh-card .v { font-size: 14px; }
+  .sh-exam b { font-size: 32px; }
+}
+@media print {
+  @page { size: A4; margin: 11mm; }
+  body:has(.sheetpage) { background: #fff; }
+  body:has(.sheetpage)::before { display: none; }
+  .sheetpage ~ .tabs, .sheetpage ~ .veil, .sheetpage .seg, .sheetpage .sh-top .link, .sheetpage .sh-asof .link, .sheetpage .mark { display: none; }
+  .sheetpage {
+    --paper: #fff; --ink: #000; --ink2: #333; --blue: #000; --line: #9a9a9a; --rule: #d9d9d9; --margin: #000; --hl: #fff; --on-hl: #000; --shade: transparent;
+    color: #000; max-width: none; padding: 0; gap: 9px;
+  }
+  .sheetpage .sh-grid { display: block; column-count: 3; column-gap: 8px; }
+  .sheetpage .sh-card { --lh: 20px; padding: 6px 9px 8px; margin-bottom: 8px; break-inside: avoid; background-image: none; box-shadow: none; border: 1px solid var(--line); }
+  .sheetpage .sh-card h3 { border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+  .sheetpage .sh-card.wide li { display: block; }
+  .sheetpage .sh-card.wide .k { margin-right: 7px; line-height: 0; }
+  .sheetpage .sh-card.wide .v { line-height: 0; }
+  .sheetpage .sh-card h3 { font-size: 11.5px; }
+  .sheetpage .sh-card .k { font-size: 13px; }
+  .sheetpage .sh-card .k.n { font-size: 15.5px; }
+  .sheetpage .sh-card .k.hl, .sheetpage .sh-exam .pass b { background: none; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+  .sheetpage .sh-card .v { font-size: 11.5px; }
+  .sheetpage .sh-card .v i { font-size: 10.5px; }
+  .sheetpage .sh-exam li { padding: 6px 2px; }
+  .sheetpage .sh-exam b { font-size: 22px; }
+  .sheetpage .sh-rule { --lh: 20px; break-inside: avoid; background-image: none; box-shadow: none; border: 1px solid var(--line); padding: 7px 12px 8px 38px; }
+  .sheetpage .sh-rule h3 { font-size: 14px; }
+  .sheetpage .sh-rule p, .sheetpage .sh-rule li { font-size: 12px; }
+  .sheetpage .sh-top .sub, .sheetpage .small { font-size: 11px; }
+  .sheetpage .foot { font-size: 9.5px; line-height: 1.5; break-inside: avoid; }
+  .sheetpage .foot a { color: inherit; }
+}
+
 /* ---- welcome (first visit) ---- */
 /* A sheet of the notebook: the headline sits on the ruled lines, the pass mark is the teacher's red grade. */
 .wl { gap: 20px; }
@@ -338,7 +434,7 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
   background-color: var(--paper);
   background-image: linear-gradient(to bottom, transparent calc(var(--lh) - 1px), var(--rule) calc(var(--lh) - 1px));
   background-size: 100% var(--lh);
-  background-position: 0 9px;
+  background-position: 0 12px;
   box-shadow: 0 0 0 1px var(--line), 0 6px 18px -8px var(--shade);
 }
 .wl-hero::before { content: ""; position: absolute; top: 0; bottom: 0; left: 26px; width: 1.5px; background: var(--margin); opacity: .8; }

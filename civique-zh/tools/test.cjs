@@ -516,6 +516,49 @@ if (CODE) {
   await ctx.close();
 
   // ---- 8. wide screen and dark theme
+  // ---- 考前一页: the free cram sheet (data/sheet.json)
+  console.log('cram sheet');
+  const sheet = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'sheet.json'), 'utf8'));
+  const sheetItems = sheet.groups.reduce((a, g) => a.concat(g.items), []);
+  const sheetText = JSON.stringify(sheet);
+  check('sheet.json: 50 to 75 items, each with a key and a meaning, no addresses or links',
+    sheetItems.length >= 50 && sheetItems.length <= 75 && sheetItems.every((it) => it.k && it.k.trim() && it.v && it.v.trim()) &&
+    sheet.groups.every((g) => g.id && g.title && g.items.length >= 4 && g.items.length <= 8) && sheet.rule.points.length >= 4 && !/@|https?:|www\./i.test(sheetText), String(sheetItems.length));
+  ({ ctx, page } = await fresh());
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="cr"]').click();
+  await page.waitForSelector('.themes');
+  await page.locator('.tabs a[href="#cards"]').click();
+  await page.waitForSelector('.seg a[href="#sheet"]');
+  await page.locator('.seg a[href="#sheet"]').click();
+  await page.waitForSelector('.sh-card');
+  check('the sheet opens from the switch on the cards page, free, with 速记 still highlighted',
+    await page.locator('.seg a[href="#sheet"][aria-current="page"]').count() === 1 && await page.locator('.tabs a[href="#cards"][aria-current="page"]').count() === 1 &&
+    await page.locator('.sheetpage .pay, .sheetpage [data-a="locked"]').count() === 0 && await page.locator('.sheetpage .foot').count() === 1 && await page.locator('.sheetpage a[href="#home"]').count() === 1);
+  const shown = await page.evaluate(() => [...document.querySelectorAll('.sh-card')].map((c) => ({ t: c.querySelector('h3').textContent, items: [...c.querySelectorAll('li')].map((li) => [li.querySelector('.k').textContent, li.querySelector('.v').firstChild.textContent.trim(), (li.querySelector('.v [lang="fr"]') || {}).textContent || '']) })));
+  check('every group and item of sheet.json is on the page, and the scenario rule too',
+    JSON.stringify(shown) === JSON.stringify(sheet.groups.map((g) => ({ t: g.title, items: g.items.map((it) => [it.k, it.v, it.fr || '']) }))) &&
+    await page.locator('.sh-rule ol li').count() === sheet.rule.points.length && (await page.locator('.sh-rule p').innerText()) === sheet.rule.lead &&
+    (await page.locator('.sh-exam').innerText()).replace(/\s+/g, ' ').includes('40') && await page.locator('.sh-card .k.hl').count() === sheetItems.filter((it) => it.hl).length);
+  check('no sideways scroll on the sheet', await noOverflow(page));
+  await shot(page, '27-sheet');
+  await page.goto(base + '#home');
+  await page.locator('[data-a="theme"][data-v="principes"]').click();
+  await page.locator('.sheet [data-a="goto"][data-v="sheet"]').click();
+  await page.waitForSelector('.sh-rule');
+  check('a theme with scenario questions links to the rule on the sheet', await page.locator('.veil').count() === 0);
+  await ctx.close();
+  ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
+  await page.goto(base + '#sheet');
+  await page.waitForSelector('.sh-card');
+  check('the sheet opens directly before any exam type is chosen, no sideways scroll at 320px', await noOverflow(page) && await page.locator('.sh-card').count() === sheet.groups.length);
+  await page.goto(base + '#home');
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.quick a[href="#sheet"]');
+  check('home links to the sheet and still fits at 320px', await noOverflow(page) && await page.evaluate(() => [...document.querySelectorAll('.quick a')].every((a) => a.scrollWidth <= a.clientWidth + 1)));
+  await shot(page, '28-sheet-320');
+  await ctx.close();
+
   // ---- registering for the real exam: steps and the centre finder
   console.log('registration page');
   ({ ctx, page } = await fresh({ geolocation: { latitude: 45.764, longitude: 4.8357 }, permissions: ['geolocation'] }));
@@ -584,7 +627,7 @@ if (CODE) {
   await page.waitForSelector('.themes');
   const csp = Object.values(free.meta.counts.csp).reduce((a, m) => a + m.c + m.s, 0);
   check('home ring starts empty and shows the total from the data', await page.locator('.ring .arc').count() === 0 && (await page.locator('.ring').getAttribute('aria-label')).replace(/\s+/g, '') === '已掌握0/' + csp + '题' && await page.locator('.hero-fact').count() === 0, await page.locator('.ring').getAttribute('aria-label'));
-  check('each theme has an icon and the home actions fit at 320px', await page.locator('.theme .ti svg').count() === 5 && await page.locator('.hero [data-a="continue"]').count() === 1 && await page.locator('.hero a[href="#exam"]').count() === 1 && await page.locator('.quick a').count() === 2 && await noOverflow(page));
+  check('each theme has an icon and the home actions fit at 320px', await page.locator('.theme .ti svg').count() === 5 && await page.locator('.hero [data-a="continue"]').count() === 1 && await page.locator('.hero a[href="#exam"]').count() === 1 && await page.locator('.quick a').count() === 3 && await noOverflow(page));
   await page.locator('[data-a="continue"]').click();
   await page.waitForSelector('.stem');
   await answer(page, true);

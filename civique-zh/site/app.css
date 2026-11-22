@@ -607,3 +607,29 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
 @media (max-width: 359px) { .offer-code .code { font-size: 22px; } }
 /* ---- small fixes after the page-by-page review ---- */
 .grid40 button { text-align: center; }
+/* ---- word popup ---- */
+/* Any French word of a question can be tapped (never in the mock exam). The word gets the highlighter,
+   and a small note with its meaning is pinned next to it. */
+.tw { cursor: pointer; text-decoration: underline dotted var(--line); text-decoration-thickness: 1.5px; text-underline-offset: .26em; -webkit-touch-callout: none; }
+.opt .tw { text-decoration-color: var(--ink2); text-decoration-thickness: 1px; }
+.opt.dim .tw { text-decoration-color: var(--line); }
+.tw.on { text-decoration: none; background: linear-gradient(transparent 14%, var(--hl) 14%, var(--hl) 90%, transparent 90%); color: var(--on-hl); border-radius: 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+div.opt { cursor: default; }
+.tw-hint { font-size: 13px; line-height: 1.5; color: var(--ink2); padding-left: 10px; border-left: 1.5px solid var(--margin); }
+.tw-pop { position: fixed; z-index: 9; left: 0; top: 0; width: max-content; min-width: 128px; max-width: min(292px, calc(100vw - 20px)); padding: 9px 14px 12px; background: var(--paper); color: var(--ink); border-radius: 12px; box-shadow: 0 0 0 1.5px var(--blue), 0 10px 26px var(--shade); }
+.tw-pop::after { content: ""; position: absolute; left: var(--tw-x, 50%); bottom: -6.5px; width: 11px; height: 11px; margin-left: -5.5px; background: var(--paper); border: solid var(--blue); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.tw-pop.below::after { bottom: auto; top: -6.5px; border-width: 1.5px 0 0 1.5px; }
+.tw-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; }
+.tw-w { font-family: var(--font-fr); font-size: 18px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; min-width: 0; }
+.tw-say { position: relative; flex: none; width: 34px; height: 34px; margin-right: -6px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--blue); box-shadow: inset 0 0 0 1.5px var(--line); }
+.tw-say::before { content: ""; position: absolute; inset: -5px; }
+.tw-say svg { width: 17px; height: 17px; }
+.tw-zh { font-size: 16px; line-height: 1.5; }
+.tw-tip { margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--line); font-size: 13.5px; line-height: 1.6; color: var(--ink2); }
+.tw-tip b { display: inline-block; margin-right: 7px; padding: 0 5px; border-radius: 3px; background: var(--hl); color: var(--on-hl); font-size: 11.5px; font-weight: 700; line-height: 1.55; letter-spacing: .08em; vertical-align: 1px; }
+.tw-none { font-size: 14px; line-height: 1.55; color: var(--ink2); }
+.copy .voc .tip { flex-basis: 100%; font-size: 13.5px; color: var(--ink2); }
+@media (prefers-reduced-motion: no-preference) {
+  .tw-pop { animation: tw-in .12s ease-out; }
+  @keyframes tw-in { from { opacity: 0; } }
+}

@@ -17,6 +17,7 @@ site/                 要上线的网页，整个文件夹直接部署
   data/bank.json      完整题库和考点速记（加密，需要解锁码才能打开）
   data/centres.json   考场名单（France Éducation International 官网公开的名单，免费页面“报名”使用）
   data/sheet.json     “考前一页”的内容（免费页面，每一条都能在题库或考点速记里找到出处）
+  data/dict.json      题目里出现的法语词的中文释义（做题时点词查看，模考里不提供）
   sw.js               离线缓存：打开过一次后，没有网络也能用
 functions/api/unlock.js   付款后自动解锁的函数（Cloudflare Pages Functions）
 server/unlock-core.mjs    函数的全部逻辑，测试时直接调用

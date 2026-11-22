@@ -21,6 +21,7 @@ const page = [
   '<script>window.CIVIQUE_FREE = ' + safe(JSON.stringify(JSON.parse(read('data/free.json')))) + ';</script>',
   '<script>window.CIVIQUE_CENTRES = ' + safe(JSON.stringify(JSON.parse(read('data/centres.json')))) + ';</script>',
   '<script>window.CIVIQUE_SHEET = ' + safe(JSON.stringify(JSON.parse(read('data/sheet.json')))) + ';</script>',
+  '<script>window.CIVIQUE_DICT = ' + safe(JSON.stringify(JSON.parse(read('data/dict.json')))) + ';</script>',
   '<script>\n' + safe(read('app.js')) + '</script>',
 ].join('\n');
 writeFileSync(out, page);

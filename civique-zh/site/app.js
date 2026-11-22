@@ -407,11 +407,13 @@
     var kind = q.k === 's' ? '<span class="tag blue">情景题</span><span class="tag">本站练习题，非官方原题</span>' : '<span class="tag blue">知识题</span><span class="tag">官方题目</span>';
     var seen = recallIds().n[q.id];
     if (seen) kind += '<span class="tag hot">机经提到 ' + seen + ' 次</span>';
-    var out = '<div class="kind">' + kind + '</div><p class="stem" lang="fr">' + esc(q.q) + '</p>';
+    var tap = o.mode !== 'exam';
+    if (tap) loadDict();
+    var out = '<div class="kind">' + kind + '</div><p class="stem" lang="fr">' + (tap ? tapWords(q.q) : esc(q.q)) + '</p>';
     if (o.mode !== 'exam') {
       out += '<div class="tools">' +
         (canSpeak ? '<button class="chip" data-a="say"' + (o.mode === 'practice' ? '' : ' data-v="' + esc(q.id) + '"') + '>' + icon('say') + '朗读</button>' : '') +
-        (o.mode === 'practice' ? '<button class="chip" data-a="zh" aria-pressed="' + (o.zh ? 'true' : 'false') + '">' + (o.zh ? '中文：开' : '中文：关') + '</button>' : '') + '</div>';
+        (o.mode === 'practice' ? '<button class="chip" data-a="zh" aria-pressed="' + (o.zh ? 'true' : 'false') + '">' + (o.zh ? '中文：开' : '中文：关') + '</button>' : '') + '</div>' + wordHint(o.mode, q);
     }
     if (showZh) out += '<p class="stemz">' + esc(q.qz) + '</p>';
     out += '<div class="opts">' + o.perm.map(function (orig, pos) {
@@ -420,16 +422,18 @@
         dis = ' disabled';
         if (orig === 0) cls += ' right'; else if (orig === o.chosen && !show) cls += ' wrong'; else cls += ' dim';
       } else if (o.mode === 'exam' && o.chosen === orig) cls += ' sel';
-      return '<button class="' + cls + '" data-a="' + (o.mode === 'exam' ? 'exam-pick' : 'pick') + '" data-v="' + orig + '"' + dis + '>' +
-        '<span class="let">' + LETTERS[pos] + '</span><span class="txt"><span class="fr" lang="fr">' + esc(q.o[orig]) + '</span>' +
-        (showZh ? '<span class="zh">' + esc(q.oz[orig]) + '</span>' : '') + '</span></button>';
+      // once the answer is out an option is no longer a button: its words can be tapped instead
+      var el = reveal && tap ? 'div' : 'button';
+      return '<' + el + ' class="' + cls + '"' + (el === 'div' ? '' : ' data-a="' + (o.mode === 'exam' ? 'exam-pick' : 'pick') + '" data-v="' + orig + '"' + dis) + '>' +
+        '<span class="let">' + LETTERS[pos] + '</span><span class="txt"><span class="fr" lang="fr">' + (el === 'div' ? tapWords(q.o[orig]) : esc(q.o[orig])) + '</span>' +
+        (showZh ? '<span class="zh">' + esc(q.oz[orig]) + '</span>' : '') + '</span></' + el + '>';
     }).join('') + '</div>';
     if (reveal) {
       var ok = o.chosen === 0, letter = LETTERS[o.perm.indexOf(0)];
       var head = show ? '正确答案是 ' + letter : (ok ? '答对了' : (answered ? '答错了，正确答案是 ' + letter : '没有作答，正确答案是 ' + letter));
       out += '<section class="copy ' + (show ? 'plain' : (ok ? 'good' : 'miss')) + '"><span class="verdict" aria-hidden="true">' + (show ? '→' : (ok ? '✓' : '✗')) + '</span>' +
         '<h3>' + head + '</h3><p>' + esc(q.e) + '</p>' +
-        (q.v && q.v.length ? '<ul class="voc">' + q.v.map(function (v) { return '<li><span class="w" lang="fr">' + esc(v[0]) + '</span><span>' + esc(v[1]) + '</span></li>'; }).join('') + '</ul>' : '') +
+        (q.v && q.v.length ? '<ul class="voc">' + q.v.map(function (v) { var tip = vocTip(v[0]); return '<li><span class="w" lang="fr">' + esc(v[0]) + '</span><span>' + esc(v[1]) + '</span>' + (tip ? '<span class="tip">' + esc(tip) + '</span>' : '') + '</li>'; }).join('') + '</ul>' : '') +
         srcLink(q) + '</section>';
     }
     return out;
@@ -438,6 +442,102 @@
     return '<footer class="foot"><p>本站不是法国政府网站，与法国内政部和考试机构没有任何关系。官方备考资料是免费的，见 <a href="https://formation-civique.interieur.gouv.fr/examen-civique/" target="_blank" rel="noopener">formation-civique.interieur.gouv.fr</a>。本站收费的是中文翻译、讲解和练习工具。</p>' +
       '<p>知识题题干来自内政部公布的官方清单（Ministère de l’Intérieur – DIAN，Licence Ouverte 2.0，查阅于 ' + esc(DB.free.consulted || DB.free.built) + '）。官方没有公布选项：选项、翻译和讲解由本站编写，正式考试的选项措辞会不同，请理解知识点，不要死记选项。</p></footer>';
   }
+
+  // ---------------------------------------------------------------- tap a French word, see what it means
+  // data/dict.json has one entry per word form found in the questions: word -> [meaning] or [meaning, tip].
+  // Never in the mock exam: the real exam has no dictionary.
+  var WORD_RE = /([A-Za-zÀ-ÿœæŒÆ]+['’])|([A-Za-zÀ-ÿœæŒÆ]+(?:-[A-Za-zÀ-ÿœæŒÆ]+)*)/g;
+  var HINT_TIMES = 6;
+  var dictWait = null, dictFail = false, wordAt = null, wordBox = null, wordY = 0;
+  function loadDict() {
+    if (DB.dict || dictWait) return;
+    dictFail = false;
+    dictWait = (window.CIVIQUE_DICT ? Promise.resolve(window.CIVIQUE_DICT) : getJson('data/dict.json')).then(function (d) {
+      if (!d || !d.w || typeof d.w !== 'object') throw new Error('dict');
+      DB.dict = d.w;
+    }).catch(function () { dictFail = true; }).then(function () { dictWait = null; if (wordAt) fillWord(); });
+  }
+  function wordKey(w) { return String(w).toLowerCase().replace(/’/g, '\''); }
+  function dictEntry(w) {
+    var k = wordKey(w);
+    var e = DB.dict && Object.prototype.hasOwnProperty.call(DB.dict, k) ? DB.dict[k] : null;
+    return Array.isArray(e) && e[0] ? e : null;
+  }
+  function tapWords(text) {
+    var out = '', last = 0;
+    text = String(text);
+    text.replace(WORD_RE, function (m) {
+      var at = arguments[arguments.length - 2];
+      out += esc(text.slice(last, at)) + '<span class="tw" data-a="tw">' + esc(m) + '</span>';
+      last = at + m.length;
+      return m;
+    });
+    return out + esc(text.slice(last));
+  }
+  // the tip for a word of the vocabulary list: the word itself, or the word without its article
+  function vocTip(w) {
+    var e = dictEntry(w) || dictEntry(String(w).replace(/^(?:l['’]|(?:le|la|les|un|une|des)\s+)/i, ''));
+    return e && e[1] ? e[1] : '';
+  }
+  function wordHint(mode, q) {
+    if (mode !== 'practice' || S.tapped) return '';
+    if (ui.hintFor !== q.id) { ui.hintFor = q.id; S.hinted = (S.hinted || 0) + 1; }     // saved with the next answer
+    return S.hinted > HINT_TIMES ? '' : '<p class="tw-hint">点任意法语词，看中文意思</p>';
+  }
+  function closeWord() {
+    if (wordAt) wordAt.classList.remove('on');
+    if (wordBox && wordBox.parentNode) wordBox.parentNode.removeChild(wordBox);
+    wordAt = null; wordBox = null;
+  }
+  function fillWord() {
+    if (!wordAt || !wordBox) return;
+    var w = wordAt.textContent, e = dictEntry(w), said = w, nx = wordAt.nextSibling;
+    if (/['’]$/.test(w) && nx && nx.nodeType === 1 && nx.classList.contains('tw')) said = w + nx.textContent;      // "l'" alone cannot be pronounced
+    var body;
+    if (e) body = '<p class="tw-zh">' + esc(e[0]) + '</p>' + (e[1] ? '<p class="tw-tip"><b>记法</b>' + esc(e[1]) + '</p>' : '');
+    else if (DB.dict) body = '<p class="tw-none">词典里没有这个词，多半是人名、地名或数字。</p>';
+    else if (dictFail) body = '<p class="tw-none">词典没有加载出来，检查网络后再点一次。</p>';
+    else body = '<p class="tw-none">词典正在加载…</p>';
+    wordBox.innerHTML = '<div class="tw-top"><span class="tw-w" lang="fr">' + esc(w) + '</span>' +
+      (canSpeak ? '<button class="tw-say" data-a="word" data-v="' + esc(said) + '" aria-label="听发音">' + icon('say') + '</button>' : '') + '</div>' + body;
+    placeWord();
+  }
+  function placeWord() {
+    var rects = wordAt.getClientRects(), r = rects.length ? rects[0] : wordAt.getBoundingClientRect();
+    var vw = document.documentElement.clientWidth, vh = window.innerHeight, edge = 10, gap = 10;
+    wordBox.className = 'tw-pop';
+    wordBox.style.left = '0px'; wordBox.style.top = '0px';
+    var bw = wordBox.offsetWidth, bh = wordBox.offsetHeight;
+    var bar = document.querySelector('.qbar'), roof = bar ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+    var mid = r.left + r.width / 2;
+    var left = Math.max(edge, Math.min(mid - bw / 2, vw - edge - bw));
+    var below = r.top - gap - bh < roof + 4 && r.bottom + gap + bh <= vh - 4;
+    if (below) wordBox.className = 'tw-pop below';
+    wordBox.style.left = Math.round(left) + 'px';
+    wordBox.style.top = Math.round(below ? r.bottom + gap : Math.max(4, r.top - gap - bh)) + 'px';
+    wordBox.style.setProperty('--tw-x', Math.round(Math.max(18, Math.min(mid - left, bw - 18))) + 'px');
+  }
+  function tapWord(el) {
+    if (wordAt === el) return closeWord();
+    closeWord();
+    if (!DB.dict) loadDict();
+    if (!S.tapped) {
+      S.tapped = 1; save();
+      var hint = document.querySelector('.tw-hint'); if (hint && hint.parentNode) hint.parentNode.removeChild(hint);
+    }
+    wordAt = el; wordY = window.pageYOffset || 0; el.classList.add('on');
+    wordBox = document.createElement('div');
+    wordBox.className = 'tw-pop'; wordBox.setAttribute('role', 'status');
+    document.body.appendChild(wordBox);
+    fillWord();
+  }
+  document.addEventListener('click', function (ev) {
+    if (wordAt && !(ev.target.closest && ev.target.closest('.tw-pop, .tw'))) closeWord();
+  });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeWord(); });
+  // the note is pinned to the screen, so it goes when the page really moves (not for the tail end of a scroll that brought the word into view)
+  window.addEventListener('scroll', function () { if (wordAt && Math.abs((window.pageYOffset || 0) - wordY) > 6) closeWord(); }, { passive: true });
+  window.addEventListener('resize', function () { if (wordAt) closeWord(); });
 
   // ---------------------------------------------------------------- views
   function vChoose() {
@@ -950,6 +1050,7 @@
     var r = route();
     if (S.exam && r !== 'exam') { location.hash = 'exam'; return; }
     if (r === 'quiz' && !S.sess) { location.hash = 'home'; return; }
+    closeWord();
     app.innerHTML = VIEWS[r]() + modal();
     if (top) window.scrollTo(0, 0);
   }
@@ -1016,6 +1117,7 @@
       speak(q.q + ' ... ' + perm.map(function (orig, pos) { return LETTERS[pos] + '. ' + q.o[orig]; }).join(' ... '));
     },
     word: function (v) { speak(v); },
+    tw: function (v, el) { tapWord(el); },
     next: function () { var s = S.sess; if (!s) return; s.i = Math.min(s.ids.length, s.i + 1); save(); hush(); render(true); },
     prev: function () { var s = S.sess; if (!s) return; s.i = Math.max(0, s.i - 1); save(); hush(); render(true); },
     'exam-start': function (v) { startExam(v === 'mini' || !unlocked()); ui.modal = null; render(true); },

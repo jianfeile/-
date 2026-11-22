@@ -671,6 +671,51 @@ if (CODE) {
     await ctx.close();
   }
 
+  // ---- tap a French word of a question to see what it means
+  console.log('word popup');
+  {
+    const dict = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'dict.json'), 'utf8')).w;
+    const known = (w) => dict[w.toLowerCase().replace(/’/g, "'")];
+    const openQuestion = async () => {
+      await page.goto(base);
+      await page.locator('[data-a="target"][data-v="csp"]').click();
+      await page.waitForSelector('.themes');
+      await page.locator('[data-a="continue"]').click();
+      await page.waitForSelector('.stem');
+    };
+    ({ ctx, page } = await fresh());
+    await openQuestion();
+    const stemText = await page.locator('.stem').innerText();
+    const q = free.qs.find((x) => x.q === stemText);
+    const words = await page.locator('.stem .tw').allInnerTexts();
+    check('the words of the question can be tapped and its text is unchanged', !!q && words.length > 1 && await page.locator('.opt .tw').count() === 0 && await page.locator('.tw-hint').count() === 1);
+    const at = words.findIndex((w) => known(w));
+    await page.locator('.stem .tw').nth(Math.max(0, at)).click();
+    const pop = page.locator('.tw-pop');
+    check('tapping a word shows its Chinese meaning', at >= 0 && await pop.count() === 1 && (await pop.locator('.tw-w').innerText()) === words[at] && (await pop.locator('.tw-zh').innerText()) === known(words[at])[0], words[at]);
+    check('the hint goes away for good after the first tap', await page.locator('.tw-hint').count() === 0 && (await state(page)).tapped === 1);
+    await page.keyboard.press('Escape');
+    check('Escape closes the word note', await pop.count() === 0);
+    await page.locator('.opts .opt .fr').first().click();
+    const shown = (await page.locator('.opt .fr').allInnerTexts()).map((t) => t.trim()).sort().join('|');
+    check('tapping an option before answering still answers, and then its words can be tapped too', await page.locator('.copy').count() === 1 && !!q && shown === q.o.slice().sort().join('|') && await page.locator('.opt .tw').count() > 0);
+    await page.waitForTimeout(800);       // the page scrolls to the explanation after an answer
+    await page.locator('.opt .tw').first().click();
+    await page.locator('.opt .tw').last().click();
+    check('only one word note at a time, inside the screen', await pop.count() === 1 && (await pop.locator('.tw-w').innerText()) === (await page.locator('.opt .tw').last().innerText()) && await pop.evaluate((el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth && r.top >= 0 && r.bottom <= window.innerHeight; }));
+    await page.goto(base + '#exam');
+    await page.locator('[data-a="exam-start"]').click();
+    await page.waitForSelector('#timer');
+    check('no tappable words and no word note in the mock exam', await page.locator('.stem').count() === 1 && await page.locator('.tw').count() === 0 && await pop.count() === 0);
+    await ctx.close();
+    ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
+    await page.route('**/data/dict.json', (r) => r.abort());
+    await openQuestion();
+    await page.locator('.stem .tw').last().click();
+    check('without the dictionary file a tap says so calmly, at 320px too', await page.locator('.tw-pop .tw-none').count() === 1 && await noOverflow(page));
+    await ctx.close();
+  }
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

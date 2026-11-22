@@ -482,7 +482,7 @@
       '<div class="in" aria-hidden="true"><span class="n">' + t.done + '</span><span class="of">/ ' + t.total + ' 题</span></div></div>' +
       '<div class="hero-acts"><button class="btn" data-a="continue">' + (sess ? '继续练习' : (answeredCount() ? '接着练' : '开始练习')) + '</button><a class="btn ghost" href="#exam">模拟考试</a></div></div>' +
       (best ? '<p class="hero-fact">' + (best.mini ? '试考' : '模拟考试') + '最好成绩 <b' + (best.score >= best.passAt ? ' class="pass"' : '') + '>' + best.score + '/' + best.n + '</b>' +
-        (best.score >= best.passAt ? '，已过及格线 ' + best.passAt : '，离及格线 ' + best.passAt + ' 还差 ' + (best.passAt - best.score) + ' 题') + '</p>' : '') +
+        (best.score >= best.passAt ? '，已过及格线（' + best.passAt + ' 题）' : '，离及格还差 ' + (best.passAt - best.score) + ' 题') + '</p>' : '') +
       '<div class="quick"><a href="#mistakes">' + icon('mistakes') + '错题本' + (nm ? '<b>' + nm + '</b>' : '') + '</a><a href="#words">' + icon('words') + '生词表</a></div></section>';
     out += '<section class="stack"><h2>五个主题</h2><div class="themes">' + THEMES.map(function (th) {
       var c = counts(th.id);

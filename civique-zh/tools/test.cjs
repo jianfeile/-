@@ -618,7 +618,8 @@ if (CODE) {
   const proofNums = await page.locator('.wl-proof li b').allInnerTexts();
   check('welcome shows the bank\'s own numbers', [free.meta.total, free.meta.cards, (free.recall || []).length, free.meta.free].filter((n) => n > 0).join() === proofNums.join(), proofNums.join());
   check('welcome says the recollections are not official and keeps the disclaimer', /不是官方/.test(await page.locator('.wl-proof-wrap').innerText()) && await page.locator('.foot').count() === 1);
-  check('headline, numbers and the first choice fit a 390x800 phone without scrolling', await page.evaluate(() => document.querySelector('[data-a="target"]').getBoundingClientRect().bottom <= document.querySelector('.tabs').getBoundingClientRect().top));
+  check('headline, numbers, and the first question with at least two options fit a 390x800 phone without scrolling', await page.evaluate(() => { const top = document.querySelector('.tabs').getBoundingClientRect().top, o = document.querySelectorAll('.wl-try .opt'); return o.length === 4 && document.querySelector('.wl-try .stem').getBoundingClientRect().top > 0 && o[1].getBoundingClientRect().bottom <= top; }));
+  check('the choice of exam comes right after the first question', await page.evaluate(() => { const n = document.querySelector('.wl-try').nextElementSibling; return !!n && n.classList.contains('wl-next') && n.querySelectorAll('[data-a="target"]').length > 0; }));
   await shot(page, '27-welcome');
   // ---- home: progress ring, theme icons, best exam result
   ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
@@ -723,6 +724,76 @@ if (CODE) {
     const missing = new Set();
     for (const q of free.qs) for (const t of [q.q].concat(q.o)) for (const m of t.match(re) || []) { const k = m.toLowerCase().replace('’', "'"); if (!dict[k]) missing.add(k); }
     check('dictionary has every French word of the free questions', missing.size === 0, [...missing].slice(0, 8).join(' '));
+  }
+
+  // ---- a question to answer on the first screen, the price on the buttons, the bank's date, reporting a mistake
+  console.log('first question, price, report');
+  {
+    const price = (/price:\s*'([^']*)'/.exec(fs.readFileSync(path.join(SITE, 'config.js'), 'utf8')) || [])[1] || '';
+    ({ ctx, page } = await fresh({ viewport: { width: 390, height: 800 } }));
+    await page.goto(base);
+    await page.waitForSelector('.wl-try .opt');
+    const stem = (await page.locator('.wl-try .stem').innerText()).trim(), q = free.qs.find((x) => x.q === stem);
+    const shown = (await page.locator('.wl-try .opt .fr').allInnerTexts()).map((t) => t.trim());
+    check('welcome: one free official question of every exam can be answered in place, options not in stored order', !!q && q.k === 'c' && Object.keys(free.meta.counts).every((lv) => q.l.includes(lv)) && shown.length === 4 && shown.slice().sort().join('|') === q.o.slice().sort().join('|') && shown[0] !== q.o[0] && await page.locator('.wl-try button.opt[data-a="demo-pick"]').count() === 4 && await page.locator('.wl-try .copy').count() === 0);
+    const before = JSON.stringify(await state(page));
+    await page.locator('.wl-try .opt', { hasText: q.o[1] }).click();
+    await page.waitForSelector('.wl-try .copy');
+    const rightText = (await page.locator('.wl-try .opt.right .fr').innerText()).trim();
+    check('welcome: answering marks right and wrong and shows the Chinese translation and explanation', rightText === q.o[0] && await page.locator('.wl-try .opt.wrong').count() === 1 && (await page.locator('.wl-try .copy').innerText()).includes(q.e) && (await page.locator('.wl-try .stemz').innerText()).trim() === q.qz && await page.locator('.wl-try .stem .tw').count() > 0, rightText);
+    const after = await state(page);
+    check('welcome: the answer is not a practice session and is not counted', JSON.stringify(after) === before && !after.sess && Object.keys(after.stats || {}).length === 0 && !after.target);
+    await page.locator('[data-a="demo-next"]').click();
+    await page.waitForFunction(() => { const r = document.querySelector('[data-a="target"]').getBoundingClientRect(); return r.top >= 0 && r.bottom <= document.querySelector('.tabs').getBoundingClientRect().top; });
+    check('welcome: after the answer one tap leads to the choice of exam', await page.locator('text=你准备申请哪一种').count() === 1 && await noOverflow(page));
+    await shot(page, '28-welcome-answered');
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForSelector('.pay');
+    const payBtn = (await page.locator('.pay a[href="#unlock"]').innerText()).replace(/\s+/g, ' ');
+    const payTerms = await page.locator('.pay .buy-terms').innerText();
+    await page.goto(base + '#unlock');
+    await page.waitForSelector('.cmp');
+    check('the price of config.js is written on the button of the offer, with the terms under it, and on the unlock page', price !== '' && payBtn.includes('解锁全部') && payBtn.includes(price) && /一次付款，不是订阅，长期使用/.test(payTerms) && (await page.locator('.offer-price').innerText()).includes(price), payBtn + ' / ' + payTerms);
+    check('the unlock page still says the official material is free, and when the bank was built', /官方的备考资料是免费的/.test(await page.locator('.offer-honest').innerText()) && (await page.locator('.bank-asof').innerText()).includes(free.built));
+    await page.goto(base + '#about');
+    await page.waitForSelector('.bank-asof');
+    const asof = await page.locator('.bank-asof').innerText();
+    check('about: date of the bank, date the official list was read, number of questions', asof.includes('题库更新于 ' + free.built) && asof.includes('官方题目清单查阅于 ' + free.consulted) && asof.includes(String(free.meta.total)), asof);
+    // no contact in the settings: the question number in a sheet, with a copy button
+    await page.goto(base + '#home');
+    await page.locator('[data-a="continue"]').click();
+    await page.waitForSelector('.stem');
+    const qidStem = (await page.locator(".stem").first().innerText()).trim(), qid = free.qs.find((x) => x.q === qidStem).id;
+    check('no report link before the answer', await page.locator('.report').count() === 0);
+    await answer(page, false);
+    await page.locator('.copy .report').click();
+    await page.waitForSelector('.sheet');
+    const sheetText = await page.locator('.sheet').innerText();
+    await page.locator('[data-a="copy-id"]').click();
+    await page.waitForFunction(() => document.getElementById('repmsg').textContent !== '');
+    check('report without a contact: a sheet with the question number, a copy button and what to do', (await page.locator('#repid').innerText()).trim() === qid && /题号/.test(sheetText) && /把题号发给卖家，核实后会更正/.test(sheetText) && /复制|选中/.test(await page.locator('#repmsg').innerText()), sheetText.replace(/\s+/g, ' '));
+    await shot(page, '29-report-sheet');
+    await ctx.close();
+    // an email address in the settings: one tap opens an email about this question; the pay buttons carry the price
+    ({ ctx, page } = await fresh());
+    await page.addInitScript(() => {
+      let cfg;
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: 'aide@example.com', payUrl: 'https://pay.example.com/x' }); } });
+    });
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForSelector('.themes');
+    await page.locator('[data-a="continue"]').click();
+    await page.waitForSelector('.stem');
+    const qid2Stem = (await page.locator(".stem").first().innerText()).trim(), qid2 = free.qs.find((x) => x.q === qid2Stem).id;
+    await answer(page, true);
+    const href = await page.locator('.copy a.report').getAttribute('href');
+    check('report with an email contact: a mailto link with the question number in subject and body', /^mailto:aide@example\.com\?subject=/.test(href) && decodeURIComponent(href).split(qid2).length === 3 && decodeURIComponent(href).includes('哪里有问题：') && (await page.locator('.copy a.report').innerText()).includes(qid2), href);
+    await page.goto(base + '#unlock');
+    await page.waitForSelector('.cmp');
+    const payBtns = await page.locator('.buy a.btn').allInnerTexts();
+    check('unlock page: every pay button carries the price and the terms sit under it', payBtns.length === 2 && payBtns.every((t) => t.includes(price)) && (await page.locator('.buy-terms').allInnerTexts()).every((t) => /一次付款，不是订阅，长期使用/.test(t)) && (await page.locator('.buy a.btn').first().getAttribute('href')).startsWith('https://pay.example.com/x'), payBtns.join(' | '));
+    await ctx.close();
   }
 
   console.log('layouts');

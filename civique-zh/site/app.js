@@ -382,8 +382,8 @@
       (d.cards ? '<li><b>' + d.cards + '</b><span>张考点速记</span></li>' : '') +
       '<li><b>' + EXAM.n + '</b><span>题完整模考</span></li></ul>' +
       '<p class="pay-line">每题都有中文翻译和讲解。' + levelIds().map(function (lv) { return LEVELS[lv].short; }).join('、') + '的题库都包含，现在免费开放 ' + d.free + ' 题。</p>' +
-      '<div class="pay-foot"><span class="price"><b>' + esc(CFG.price || '') + '</b><small>一次性付款，不是订阅</small></span>' +
-      '<a class="btn" href="#unlock">去解锁</a></div></section>';
+      (CFG.price ? buyButton('#unlock', '解锁全部')
+        : '<div class="pay-foot"><span class="price"><small>一次性付款，不是订阅</small></span><a class="btn" href="#unlock">去解锁</a></div>') + '</section>';
   }
   function modal() {
     var m = ui.modal; if (!m) return '';
@@ -398,11 +398,12 @@
     var s = DB.src[q.s];
     return '<a class="src" href="' + esc(s[1]) + '" target="_blank" rel="noopener">对照官方讲义：<span lang="fr">' + esc(s[0]) + '</span> ↗</a>';
   }
-  // one question. o: { perm, chosen, zh, mode: 'practice' | 'exam' | 'review' }
+  // one question. o: { perm, chosen, zh, mode: 'practice' | 'exam' | 'review' | 'show' | 'demo' }  (demo: the question of the welcome screen, answered in place and never recorded)
   function question(q, o) {
     var answered = o.chosen !== undefined && o.chosen !== -1;
     var show = o.mode === 'show';
-    var reveal = show || o.mode === 'review' || (o.mode === 'practice' && answered);
+    var demo = o.mode === 'demo';
+    var reveal = show || o.mode === 'review' || ((o.mode === 'practice' || demo) && answered);
     var showZh = o.zh || reveal;
     var kind = q.k === 's' ? '<span class="tag blue">情景题</span><span class="tag">本站练习题，非官方原题</span>' : '<span class="tag blue">知识题</span><span class="tag">官方题目</span>';
     var seen = recallIds().n[q.id];
@@ -410,7 +411,7 @@
     var tap = o.mode !== 'exam';
     if (tap) loadDict();
     var out = '<div class="kind">' + kind + '</div><p class="stem" lang="fr">' + (tap ? tapWords(q.q) : esc(q.q)) + '</p>';
-    if (o.mode !== 'exam') {
+    if (o.mode !== 'exam' && !demo) {
       out += '<div class="tools">' +
         (canSpeak ? '<button class="chip" data-a="say"' + (o.mode === 'practice' ? '' : ' data-v="' + esc(q.id) + '"') + '>' + icon('say') + '朗读</button>' : '') +
         (o.mode === 'practice' ? '<button class="chip" data-a="zh" aria-pressed="' + (o.zh ? 'true' : 'false') + '">' + (o.zh ? '中文：开' : '中文：关') + '</button>' : '') + '</div>' + wordHint(o.mode, q);
@@ -424,7 +425,7 @@
       } else if (o.mode === 'exam' && o.chosen === orig) cls += ' sel';
       // once the answer is out an option is no longer a button: its words can be tapped instead
       var el = reveal && tap ? 'div' : 'button';
-      return '<' + el + ' class="' + cls + '"' + (el === 'div' ? '' : ' data-a="' + (o.mode === 'exam' ? 'exam-pick' : 'pick') + '" data-v="' + orig + '"' + dis) + '>' +
+      return '<' + el + ' class="' + cls + '"' + (el === 'div' ? '' : ' data-a="' + (o.mode === 'exam' ? 'exam-pick' : (demo ? 'demo-pick' : 'pick')) + '" data-v="' + orig + '"' + dis) + '>' +
         '<span class="let">' + LETTERS[pos] + '</span><span class="txt"><span class="fr" lang="fr">' + (el === 'div' ? tapWords(q.o[orig]) : esc(q.o[orig])) + '</span>' +
         (showZh ? '<span class="zh">' + esc(q.oz[orig]) + '</span>' : '') + '</span></' + el + '>';
     }).join('') + '</div>';
@@ -434,7 +435,7 @@
       out += '<section class="copy ' + (show ? 'plain' : (ok ? 'good' : 'miss')) + '"><span class="verdict" aria-hidden="true">' + (show ? '→' : (ok ? '✓' : '✗')) + '</span>' +
         '<h3>' + head + '</h3><p>' + esc(q.e) + '</p>' +
         (q.v && q.v.length ? '<ul class="voc">' + q.v.map(function (v) { var tip = vocTip(v[0]); return '<li><span class="w" lang="fr">' + esc(v[0]) + '</span><span>' + esc(v[1]) + '</span>' + (tip ? '<span class="tip">' + esc(tip) + '</span>' : '') + '</li>'; }).join('') + '</ul>' : '') +
-        srcLink(q) + '</section>';
+        srcLink(q) + (demo ? '' : reportLink(q)) + '</section>';
     }
     return out;
   }
@@ -539,6 +540,81 @@
   window.addEventListener('scroll', function () { if (wordAt && Math.abs((window.pageYOffset || 0) - wordY) > 6) closeWord(); }, { passive: true });
   window.addEventListener('resize', function () { if (wordAt) closeWord(); });
 
+  // ---------------------------------------------------------------- first question, price buttons, report
+  // a button that leads to paying: the price is written on it and the terms right under it
+  function buyButton(href, label) {
+    return '<div class="buy"><a class="btn wide" href="' + esc(href) + '"><span>' + esc(label) + '</span>' +
+      (CFG.price ? '<span class="buy-dot" aria-hidden="true"> · </span><b class="buy-p">' + esc(CFG.price) + '</b>' : '') + '</a>' +
+      '<p class="buy-terms">' + (CFG.price ? '一次付款，不是订阅，长期使用' : '一次性付款，不是订阅') + '</p></div>';
+  }
+  // the question a visitor can answer on the welcome screen: a free official question every exam has,
+  // one that candidates reported if there is one, then the shortest to read
+  var DEMO_PERM = [2, 0, 3, 1];
+  function demoQuestion() {
+    var lv = levelIds(), seen = recallIds().n;
+    var list = (DB.free.qs || []).filter(function (q) {
+      return q.k === 'c' && q.e && q.qz && q.v && q.v.length && q.o.length === 4 && lv.every(function (l) { return q.l.indexOf(l) >= 0; });
+    });
+    list.sort(function (a, b) {
+      return (seen[b.id] ? 1 : 0) - (seen[a.id] ? 1 : 0) || a.q.length - b.q.length || (a.id < b.id ? -1 : 1);
+    });
+    return list[0] || null;
+  }
+  function demoBlock() {
+    var q = demoQuestion();
+    if (!q) return '';
+    var done = ui.demo !== undefined;
+    return '<section class="offer-sample wl-try"><span class="offer-stamp">先做一题</span>' +
+      question(q, { perm: DEMO_PERM, chosen: ui.demo, mode: 'demo' }) +
+      (done ? '<button class="wl-on" data-a="demo-next"><span>每道题都是这样讲的。<b>选你要考的类型，接着练</b></span><i aria-hidden="true">↓</i></button>'
+        : '<p class="tw-hint">点一个选项就能看到答案和中文讲解。法语词也可以点。</p>') + '</section>';
+  }
+  // when the bank was built and when the official list was last read, with the number of questions
+  function bankLine() {
+    var f = DB.free, parts = [];
+    if (f.built) parts.push('题库更新于 ' + esc(f.built));
+    if (f.consulted) parts.push('官方题目清单查阅于 ' + esc(f.consulted));
+    if (f.meta && f.meta.total) parts.push('共 ' + f.meta.total + ' 题');
+    return parts.length ? '<p class="small bank-asof">' + parts.join(' · ') + '</p>' : '';
+  }
+  // "something is wrong with this question": there is no server, so it is an email when the seller gave one, else the number to pass on
+  function contactMail() { var c = String(CFG.contact || '').trim(); return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(c) ? c : ''; }
+  function reportLink(q) {
+    var mail = contactMail();
+    if (mail) {
+      return '<a class="report" href="mailto:' + esc(encodeURIComponent(mail).replace(/%40/g, '@')) + '?subject=' + encodeURIComponent('题目纠错 ' + q.id) +
+        '&amp;body=' + encodeURIComponent('题号：' + q.id + '\n哪里有问题：\n') + '">这道题有问题？<span class="rid">题号 ' + esc(q.id) + '</span></a>';
+    }
+    return '<button class="report" data-a="report" data-v="' + esc(q.id) + '">这道题有问题？</button>';
+  }
+  function reportSheet(id) {
+    var c = String(CFG.contact || '').trim();
+    ui.modal = {
+      title: '这道题有问题？',
+      body: '<p class="rep-id"><span>题号</span><b class="code" id="repid">' + esc(id) + '</b></p>' +
+        '<p>' + (c ? '把题号和哪里有问题发给：<b class="rep-to">' + esc(c) + '</b>，核实后会更正。' : '把题号发给卖家，核实后会更正。') + '</p>' +
+        '<p class="msg" id="repmsg" role="status"></p>',
+      actions: [{ a: 'copy-id', v: id, label: '复制题号' }, { a: 'close', label: '关闭', cls: 'quiet' }]
+    };
+  }
+  function copyId(id) {
+    var note = document.getElementById('repmsg');
+    function say(t, ok) { if (note) { note.textContent = t; note.className = 'msg' + (ok ? ' ok' : ''); } }
+    function byHand() {
+      var el = document.getElementById('repid'), done = false;
+      try {
+        var r = document.createRange(), sel = window.getSelection();
+        r.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(r);
+        done = !!(document.execCommand && document.execCommand('copy'));
+      } catch (e) { /* the number stays on screen to copy by hand */ }
+      say(done ? '已复制题号 ' + id : '题号已选中，长按可以复制。', done);
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(id).then(function () { say('已复制题号 ' + id, true); }, byHand); return; }
+    } catch (e) { /* older browsers: select it instead */ }
+    byHand();
+  }
+
   // ---------------------------------------------------------------- views
   function vChoose() {
     var meta = DB.free.meta, m = meta.counts;
@@ -554,7 +630,8 @@
         return '<li' + (p[2] ? ' class="' + p[2] + '"' : '') + '><b>' + p[0] + '</b><span>' + p[1] + '</span></li>';
       }).join('') + '</ul>' +
       '<p class="small">' + (DB.recall.length ? '考生回忆（机经）来自网上的分享，不是官方公布的题目。' : '') + '另有<a href="#register">官方考点查询和报名步骤</a>。</p></section>' +
-      '<section class="stack wl-next"><div><p class="wl-step">免费开始，不用注册</p><h2>你准备申请哪一种？</h2></div>' +
+      demoBlock() +
+      '<section class="stack wl-next" id="pickexam"><div><p class="wl-step">免费开始，不用注册</p><h2>你准备申请哪一种？</h2></div>' +
       levelIds().map(function (lv) {
         return '<button class="pick" data-a="target" data-v="' + lv + '"><span class="grow"><span class="t1">' + LEVELS[lv].zh + '</span><br><span class="t2" lang="fr">' + LEVELS[lv].fr + '</span></span><span class="cnt"><b>' + n(lv) + '</b> 道官方题<span class="go" aria-hidden="true">›</span></span></button>';
       }).join('') +
@@ -955,7 +1032,7 @@
       '<li>正式考试的选项措辞会和这里不同。把知识点弄懂，比背选项有用。</li>' +
       '<li>发现错误请告诉我们' + (CFG.contact ? '：' + esc(CFG.contact) : '') + '，核实后会更正。</li>' +
       '<li>练习记录只保存在你这台设备上，本站不要求注册，不收集个人信息。</li></ul>' +
-      (CFG.seller ? '<p class="small">经营者：' + esc(CFG.seller) + '</p>' : '') + '</section>';
+      bankLine() + (CFG.seller ? '<p class="small">经营者：' + esc(CFG.seller) + '</p>' : '') + '</section>';
     out += '<section class="stack"><h2>设置</h2>' +
       '<div class="row between"><span>题库</span><span class="row">' + (unlocked() ? '<span class="tag blue">已解锁</span>' : '<a class="link" href="#unlock">输入解锁码</a>') + '</span></div>' +
       '<div class="row between"><span>练习记录</span><button class="link" data-a="reset">清空全部记录</button></div></section>';
@@ -988,7 +1065,7 @@
       return out + '<section class="stack"><h2 class="offer-h">已解锁全部题目</h2>' + (ui.msg ? '<p class="msg ok">' + esc(ui.msg.text) + '</p>' : '') +
         '<div class="offer-code"><span class="sub">你的解锁码</span><b class="code">' + esc(S.unlock ? S.unlock.code : '') + '</b><span class="small">建议现在截图保存。</span></div>' +
         '<p class="small">这台设备已经解锁。换手机或换浏览器时，输入同一个解锁码即可' + (CFG.api ? '，也可以用付款时的邮箱找回' : '') + '。</p>' +
-        '<a class="btn wide" href="#home">回首页</a></section></main>' + tabs('home');
+        '<a class="btn wide" href="#home">回首页</a></section>' + bankLine() + '</main>' + tabs('home');
     }
     var d = offerData(), at = ui.msg ? (ui.msg.at || 'code') : '';
     var names = levelIds().map(function (lv) { return LEVELS[lv].zh; }).join('、');
@@ -1005,7 +1082,7 @@
       '<p class="sub">' + names + '的题库都包含。</p>' +
       '<div class="offer-price"><span class="price"><b>' + esc(CFG.price || '') + '</b></span>' +
       '<p class="offer-terms"><b>一次性付款</b>不是订阅，不会自动续费。想用多久用多久，题目更正和补充不再收费。</p></div>' +
-      (CFG.payUrl ? '<a class="btn wide" href="' + esc(payHref()) + '">去付款</a>' +
+      (CFG.payUrl ? buyButton(payHref(), '去付款') +
         '<div class="offer-after"><h3>付款之后</h3><ol>' +
         '<li>自动回到本站，全部题目马上解锁。</li>' +
         '<li>同时给你一个解锁码，换手机或换浏览器时输入。</li>' +
@@ -1030,14 +1107,14 @@
     var sq = offerSample(d.lv);
     if (sq) out += '<section class="stack"><h2>每道题都是这样讲的</h2><p class="sub">这是免费题里的一道知识题：法语原题、中文翻译、讲解和生词。解锁后的每道题都是同样的格式。</p>' +
       '<div class="offer-sample"><span class="offer-stamp">示例</span>' + question(sq, { perm: [2, 0, 3, 1], mode: 'show' }) + '</div>' +
-      (CFG.payUrl ? '<div class="pay-foot"><span class="price"><b>' + esc(CFG.price || '') + '</b><small>一次性付款，不是订阅</small></span><a class="btn" href="' + esc(payHref()) + '">去付款</a></div>' : '') +
+      (CFG.payUrl ? buyButton(payHref(), '解锁全部') : '') +
       '</section>';
 
     // 4. for people who already paid
     out += '<hr class="hr"><section class="stack offer-have"><h2>已经有解锁码</h2><form id="codeform" class="stack"><div class="field"><input id="code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="例如 ABCD-2345-EFGH" aria-label="解锁码" maxlength="20"><button class="btn" type="submit"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '解锁中' : '解锁') + '</button></div>' +
       msg('code') + '</form></section>';
     if (CFG.api) out += '<section class="stack offer-have"><h2>找回解锁码</h2><p class="small">付过款，但换了手机或找不到解锁码：填付款时用的邮箱。</p><form id="mailform" class="stack"><div class="field"><input id="mail" class="plain" name="mail" type="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="付款时填写的邮箱" aria-label="付款邮箱" maxlength="120"><button class="btn" type="submit"' + (ui.busy ? ' disabled' : '') + '>找回</button></div>' + msg('mail') + '</form></section>';
-    out += '<section class="offer-honest"><h2>不付款也可以备考</h2><p>官方的备考资料是免费的，不付款也可以在内政部网站上看到全部法语题目和讲义。这里收费的是中文翻译、讲解和练习工具。免费试用部分开放 ' + d.free + ' 题，可以先试再决定。</p></section>';
+    out += '<section class="offer-honest"><h2>不付款也可以备考</h2><p>官方的备考资料是免费的，不付款也可以在内政部网站上看到全部法语题目和讲义。这里收费的是中文翻译、讲解和练习工具。免费试用部分开放 ' + d.free + ' 题，可以先试再决定。</p></section>' + bankLine();
     return out + '</main>' + tabs('home');
   }
 
@@ -1144,6 +1221,19 @@
       ui.busy = true; ui.msg = null; render();
       confirmPayment().then(function () { ui.busy = false; render(); });
     },
+    'demo-pick': function (v) {
+      if (ui.demo !== undefined) return;
+      ui.demo = Number(v); render();                     // nothing is saved: not a practice session, not in the statistics
+      var card = document.querySelector('.wl-on');           // bring the way on into view, the explanation sits right above it
+      if (card && card.scrollIntoView) { try { card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) { card.scrollIntoView(false); } }
+    },
+    'demo-next': function () {
+      var el = document.getElementById('pickexam'); if (!el) return;
+      var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      try { el.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(true); }
+    },
+    report: function (v) { reportSheet(v); render(); },
+    'copy-id': function (v) { copyId(v); },
     'result-show': function (v) { ui.resultIdx = Number(v); ui.open = {}; go('result'); },
     open: function (v) { ui.open[v] = !ui.open[v]; render(); },
     sess: function (v) { ui.open['s' + v] = !sessOpen(Number(v)); render(); },

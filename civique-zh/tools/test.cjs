@@ -228,13 +228,14 @@ if (CODE) {
   await page.waitForSelector('main');
   if (free.cards && free.cards.length) {
     const openable = free.cards.filter((c) => !c.x).length, lockedCards = free.cards.length - openable;
-    check('study cards: every card is listed', await page.locator('.crow').count() === free.cards.length);
-    await page.locator('.crow[data-a="open"]').first().click();
-    check('a free study card opens with its points and the official sheet link', await page.locator('.detail .facts li').count() >= 3 && await page.locator('.detail a[href^="https://formation-civique"]').count() >= 1);
+    check('study cards: every card is listed', await page.locator('.kmini').count() === free.cards.length);
+    await page.locator('.kmini:not(.lk)').first().click();
+    check('a free study card opens with its points and the official sheet link', await page.locator('.kc .facts li').count() >= 3 && await page.locator('.kc a[href^="https://formation-civique"]').count() >= 1);
     check('no sideways scroll on an open study card', await noOverflow(page));
     await shot(page, '22-cards');
     if (lockedCards) {
-      await page.locator('.crow[data-a="locked"]').first().click();
+      await page.locator('.kmini.lk').first().click();
+      await page.locator('.kc.lk [data-a="locked"]').click();
       check('a locked study card offers to unlock', await page.locator('.sheet [data-a="goto"][data-v="unlock"]').count() === 1);
       await page.locator('.sheet [data-a="close"]').click();
     }
@@ -274,8 +275,8 @@ if (CODE) {
     check('home says unlocked and hides the offer', await page.locator('.pay').count() === 0 && /已解锁/.test(await page.locator('.st-done').innerText()));
     if (free.cards && free.cards.length) {
       await page.goto(base + '#cards');
-      await page.waitForSelector('.crow');
-      check('unlocked: every study card can be opened', await page.locator('.crow[data-a="locked"]').count() === 0 && await page.locator('.crow[data-a="open"]').count() === free.cards.length);
+      await page.waitForSelector('.kmini');
+      check('unlocked: every study card can be opened', await page.locator('.kmini.lk, .kc.lk, .kc [data-a="locked"]').count() === 0 && await page.locator('.kmini').count() === free.cards.length && await page.locator('.kc .facts li').count() >= 3);
       await page.goto(base + '#home');
       await page.waitForSelector('.themes');
     }
@@ -485,7 +486,7 @@ if (CODE) {
     check('each exam session can be folded', await page.locator('.crow[data-a="sess"]').count() === 2);
     check('recollections say where they come from and that they are not official', /来源于网络/.test(txt) && /不是官方/.test(txt));
     check('recollections show no account, link or name', !/@|https?:\/\/(?!formation-civique)|小红书/.test(txt));
-    check('questions reported twice are counted', /1<\/span> 道被不同的人提到两次以上/.test(await page.locator('main').innerHTML()));
+    check('questions reported twice are counted', (await page.locator('.rc-hot').innerText()).replace(/\s+/g, '') === '1提到2次以上');
     await page.locator('.qlist .qrow[data-a="open"]').first().click();
     check('a recalled question opens with the answer and the explanation', await page.locator('.detail .copy.plain').count() === 1 && await page.locator('.detail .opt.right').count() === 1);
     check('a recalled question outside the free sample is shown as locked', await page.locator('.qrow[data-a="locked"]').count() === 1);
@@ -797,7 +798,7 @@ if (CODE) {
   console.log('offer');
   ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
   await page.goto(base + '#cards');
-  await page.waitForSelector('.crow');
+  await page.waitForSelector('.kmini');
   check('the compact offer also shows before an exam is chosen', await page.locator('.pay').count() === 1 && await page.locator('.pay a[href="#unlock"]').count() === 1 && (await page.locator('.pay-facts b').first().innerText()).trim() === String(free.meta.total));
   await page.goto(base);
   await page.locator('[data-a="target"][data-v="csp"]').click();
@@ -1217,6 +1218,104 @@ if (CODE) {
   // --------------------------------------------------------------------------------------------------
 
   // ==== checks for: study cards, words, cram sheet, recollections (add directly under this line) ====
+  console.log('study screens');
+  if (free.cards && free.cards.length) {
+    ({ ctx, page } = await fresh());
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.goto(base + '#cards');
+    await page.waitForSelector('.kc');
+    const tid = 'histoire', inTheme = free.cards.filter((c) => c.t === tid);
+    await page.locator('.kf [data-a="cth"][data-v="' + tid + '"]').click();
+    const deck = await page.evaluate(() => ({ minis: document.querySelectorAll('.kmini').length, shelves: [...document.querySelectorAll('.ks')].map((s) => s.className), pos: document.querySelector('.kc-pos').textContent.replace(/\s+/g, ''), card: document.querySelector('.kc').className, pressed: [...document.querySelectorAll('.kf [aria-pressed="true"]')].map((b) => b.dataset.v).join() }));
+    check('study cards: a theme chip shows only the cards of that theme, with the position in the deck',
+      inTheme.length > 0 && deck.minis === inTheme.length && deck.shelves.length === 1 && deck.shelves[0].includes('t-' + tid) && deck.pos === '第1/' + inTheme.length + '张' && deck.card.includes('t-' + tid) && deck.pressed === tid, JSON.stringify(deck));
+    const lockedIn = inTheme.findIndex((c) => c.x);
+    if (lockedIn >= 0) {
+      await page.locator('.kmini').nth(lockedIn).click();
+      const lk = await page.evaluate(() => ({ title: document.querySelector('.kc.lk h2').textContent, points: document.querySelectorAll('.kc .facts li').length, lead: document.querySelector('.kc .kc-lead').textContent.length }));
+      await page.locator('.kc.lk [data-a="locked"]').click();
+      check('study cards: a locked card shows its title and lead, no points, and one tap leads to the offer',
+        inTheme[lockedIn].title.startsWith(lk.title) && lk.points === 0 && lk.lead > 5 && await page.locator('.sheet [data-a="goto"][data-v="unlock"]').count() === 1, JSON.stringify(lk));
+      await page.locator('.sheet [data-a="close"]').click();
+    }
+    await page.locator('.kf [data-a="cth"][data-v=""]').click();
+    await page.locator('.kc-nav .btn').focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+    const second = (await page.locator('.kc-pos').innerText()).replace(/\s+/g, '');
+    await page.locator('.kc-nav .sq').click();
+    await page.locator('.kc-nav .sq').click();
+    check('study cards: next and previous walk the deck, by keyboard too; no sideways scroll with the shelves',
+      second === '第3/' + free.cards.length + '张' && (await page.locator('.kc-pos').innerText()).replace(/\s+/g, '') === '第1/' + free.cards.length + '张' && await page.locator('.kc-nav .sq').isDisabled() && await page.locator('.kmini[aria-current="true"]').count() === 1 && await noOverflow(page), second);
+    // words: everything the open questions teach is on the list, and the Chinese can be hidden to test oneself
+    await page.goto(base + '#words');
+    await page.waitForSelector('.words');
+    const want = [...new Set(free.qs.filter((q) => q.l.includes('csp')).flatMap((q) => (q.v || []).map((v) => v[0].toLowerCase())))].sort();
+    const got = (await page.locator('.words .w').allTextContents()).map((w) => w.trim().toLowerCase()).sort();
+    await page.locator('[data-a="wmask"]').click();
+    const hidden = await page.locator('.words .peek').count(), zhLeft = await page.locator('.words span.z').count();
+    await page.locator('.words .peek').first().click();
+    check('words: every word of the open questions is listed once, with a count; the Chinese can be hidden and shown word by word',
+      want.length > 10 && JSON.stringify(got) === JSON.stringify(want) && (await page.locator('.w-n b').innerText()).trim() === String(want.length) && hidden === want.length && zhLeft === 0 &&
+      await page.locator('.words span.z').count() === 1 && await page.locator('.words .peek').count() === want.length - 1, got.length + ' / ' + want.length + ' / ' + hidden);
+    await ctx.close();
+  }
+  for (const scheme of ['light', 'dark']) {
+    ({ ctx, page } = await fresh({ colorScheme: scheme }));
+    await page.goto(base + '#sheet');
+    await page.waitForSelector('#fig-map .sh-svg');
+    const figs = await page.evaluate(() => [...document.querySelectorAll('.sh-fig')].map((f) => {
+      const s = f.querySelector('.sh-svg').getBoundingClientRect(), z = f.querySelector('.sh-zoom'), zr = z.getBoundingClientRect(), bar = getComputedStyle(f.querySelector('figcaption')).backgroundColor;
+      return { id: f.id, w: Math.round(s.width), h: Math.round(s.height), zoom: z.textContent.trim(), zw: Math.round(zr.width), zh: Math.round(zr.height), bar, shapes: f.querySelectorAll('.sh-svg rect, .sh-svg path').length };
+    }));
+    let opened = 0;
+    for (const f of figs) {
+      await page.locator('#' + f.id + ' .sh-zoom').click();
+      if (await page.locator('.veil .sh-zoomed .sh-svg').count() === 1) opened++;
+      await page.locator('.sheet [data-a="close"]').click();
+    }
+    check('the sheet in ' + scheme + ' mode: three drawings with a real size, a coloured title bar and a 放大 button that opens each one larger',
+      figs.length === 3 && figs.every((f) => f.w > 300 && f.h > 200 && f.shapes > 10 && f.zoom === '放大' && f.zw >= 44 && f.zh >= 38 && !/rgba\(0, 0, 0, 0\)|255, 255, 255/.test(f.bar)) && opened === 3, JSON.stringify(figs));
+    if (scheme === 'light') {
+      await page.emulateMedia({ media: 'print' });
+      const paper = await page.evaluate(() => {
+        const dark = (c) => { const m = c.match(/[\d.]+/g).map(Number); return m.length > 3 && m[3] === 0 ? null : (m[0] + m[1] + m[2]) / 3; };
+        const bad = [];
+        document.querySelectorAll('.sheetpage *').forEach((e) => {
+          if (!e.getClientRects().length || e.closest('.sh-pic')) return;
+          const cs = getComputedStyle(e), bg = dark(cs.backgroundColor);
+          if (bg !== null && bg < 235) bad.push(e.className + ' bg ' + cs.backgroundColor);
+          if (e instanceof SVGElement && cs.fill !== 'none' && /^(rect|path)$/.test(e.tagName) && !/v-(city|top|peak)/.test(e.getAttribute('class') || '') && !e.closest('.hexic') && dark(cs.fill) !== null && dark(cs.fill) > 20 && dark(cs.fill) < 235) bad.push((e.getAttribute('class') || e.tagName) + ' fill ' + cs.fill);
+        });
+        return { bad: [...new Set(bad)].slice(0, 6), hidden: ['.tabs', '.seg', '.sh-zoom', '.sh-top .chip'].every((s) => [...document.querySelectorAll(s)].every((e) => !e.getClientRects().length)) };
+      });
+      const pdf = (await page.pdf({ format: 'A4', preferCSSPageSize: true })).toString('latin1');
+      const pages = (pdf.match(/\/Type\s*\/Page\b/g) || []).length;
+      check('the sheet prints black on white, without the app chrome, on 2 to 4 pages', paper.bad.length === 0 && paper.hidden && pages >= 2 && pages <= 4, pages + ' pages ' + JSON.stringify(paper));
+      await page.emulateMedia({ media: 'screen' });
+    }
+    await ctx.close();
+  }
+  if ((free.recall || []).length) {
+    ({ ctx, page } = await fresh());
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.goto(base + '#recall');
+    await page.waitForSelector('.rc-feed');
+    const rc = await page.evaluate(() => {
+      const n = document.querySelector('.rc-note'), r = n.getBoundingClientRect(), b = document.querySelector('[data-a="start"][data-v="all|recall"]').getBoundingClientRect();
+      return { text: n.innerText, top: r.top, bottom: r.bottom, btn: b.bottom, vh: window.innerHeight, nums: [...document.querySelectorAll('.rc-nums b')].map((x) => Number(x.textContent)), months: document.querySelectorAll('.rc-m').length, sess: document.querySelectorAll('.rc-s').length, dots: document.querySelectorAll('.rq[class*="t-"] .i').length, rows: document.querySelectorAll('.rc-s .qlist.inner > li').length };
+    });
+    const ids = new Set(), seen = {};
+    free.recall.forEach((r) => r.i.forEach((x) => { if (x.r) { ids.add(x.r); seen[x.r] = (seen[x.r] || 0) + 1; } }));
+    check('recollections: "not official, from the web, may be inaccurate" and the practise button are on the first screen without opening anything',
+      /非官方/.test(rc.text) && /来源于网络/.test(rc.text) && /不是官方/.test(rc.text) && /可能有出入/.test(rc.text) && rc.top >= 0 && rc.bottom < rc.vh / 2 && rc.btn < rc.vh, JSON.stringify(rc));
+    check('recollections: the three big numbers come from the data; sessions are grouped under month pills and each question carries its theme colour',
+      rc.nums[0] === free.recall.length && rc.nums[1] === ids.size && rc.nums[2] === Object.keys(seen).filter((k) => seen[k] >= 2).length && rc.sess === free.recall.length &&
+      rc.months === new Set(free.recall.map((r) => r.w)).size && rc.rows > 0 && rc.dots === rc.rows && await noOverflow(page), JSON.stringify(rc));
+    await ctx.close();
+  }
 
   // (end of: study cards, words, cram sheet, recollections)
 

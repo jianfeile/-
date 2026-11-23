@@ -1152,10 +1152,13 @@
     });
     return out + '</main>' + tabs('practice');
   }
+  // short theme names for chips and legends (the full name stays in the label read aloud)
+  var TH_SHORT = { principes: '原则', institutions: '制度', droits: '权利', histoire: '历史', societe: '社会' };
+  // 生词表: the words of the questions by theme; the French word can be heard, the Chinese can be hidden to test oneself
   function vWords() {
     if (!S.target) return vChoose();
-    var out = '<main class="wrap">' + pagehead('速记', levelChip()) + studyNav('words') + '<p class="sub">考题里反复出现、值得先认熟的法语词。' + (canSpeak ? '点一下可以听发音。' : '') + '</p>';
-    var n = 0, seen = {};
+    var out = '<main class="wrap">' + pagehead('速记', levelChip()) + studyNav('words');
+    var n = 0, seen = {}, secs = '', mask = !!ui.wmask, shown = ui.wrev || {};
     THEMES.forEach(function (t) {
       var list = [];
       pool().forEach(function (q) {
@@ -1165,37 +1168,76 @@
       if (!list.length) return;
       list.sort(function (a, b) { return a[0].replace(/^(l'|le |la |les |un |une |des )/i, '').localeCompare(b[0].replace(/^(l'|le |la |les |un |une |des )/i, ''), 'fr'); });
       n += list.length;
-      out += '<section class="stack"><h2>' + t.zh + '（' + list.length + '）</h2><ul class="words">' + list.map(function (v) {
-        return '<li><button class="w" lang="fr" data-a="word" data-v="' + esc(v[0]) + '">' + esc(v[0]) + '</button><span>' + esc(v[1]) + '</span></li>';
+      secs += '<section class="wl t-' + t.id + '"><h2 class="sec-h">' + hexBadge(icon(t.id), 'solid') + '<span class="grow">' + t.zh + '</span><b class="num">' + list.length + '</b></h2><ul class="words">' + list.map(function (v) {
+        var key = v[0].toLowerCase(), hide = mask && !shown[key];
+        return '<li>' + (canSpeak ? '<button class="w" lang="fr" data-a="word" data-v="' + esc(v[0]) + '" aria-label="听 ' + esc(v[0]) + '">' + icon('say') + '<span>' + esc(v[0]) + '</span></button>' : '<span class="w" lang="fr"><span>' + esc(v[0]) + '</span></span>') +
+          (hide ? '<button class="z peek" data-a="wrev" data-v="' + esc(key) + '" aria-label="看中文">？</button>' : '<span class="z">' + esc(v[1]) + '</span>') + '</li>';
       }).join('') + '</ul></section>';
     });
-    if (!unlocked()) out += '<p class="note blue">现在显示的是免费题里的 ' + n + ' 个生词，解锁后显示全部题目的生词。</p>' + payBlock();
+    out += '<div class="w-bar"><p class="w-n"><b class="num">' + n + '</b> 个词' + (unlocked() ? '' : '<span class="tag">免费题里的</span>') + '</p>' +
+      '<button class="chip" data-a="wmask" aria-pressed="' + mask + '">遮住中文</button></div>' + secs;
+    if (!unlocked()) out += payBlock('解锁全部题目的生词');
     return out + '</main>' + tabs('cards');
   }
   function studyNav(active) {
     return '<div class="seg n3 study" role="group" aria-label="速记、生词和考前一页"><a href="#cards"' + (active === 'cards' ? ' aria-current="page"' : '') + '><b>考点速记</b></a><a href="#words"' + (active === 'words' ? ' aria-current="page"' : '') + '><b>生词表</b></a><a href="#sheet"' + (active === 'sheet' ? ' aria-current="page"' : '') + '><b>考前一页</b></a></div>';
   }
-  // 考点速记: the official sheets (French only) condensed into Chinese cards
+  // 考点速记: the official sheets (French only) condensed into Chinese cards. A deck: one card open at a time,
+  // previous / next, a theme filter, and under it every card of the deck as a small tile to jump to.
+  function cardTitle(c) {
+    var m = /^(.*?)（([^（）]*[A-Za-zÀ-ÿ][^（）]*)）$/.exec(c.title);
+    return m ? [m[1], m[2]] : [c.title, ''];
+  }
+  function cardDeck() { return DB.cards.filter(function (c) { return !ui.cth || c.t === ui.cth; }); }
   function vCards() {
-    var out = '<main class="wrap">' + pagehead('速记', levelChip()) + studyNav('cards') + '<p class="sub">官方讲义只有法语。这里按主题整理成中文要点，每张卡片都附官方讲义的链接。</p>';
+    var out = '<main class="wrap">' + pagehead('速记', levelChip()) + studyNav('cards');
     if (!DB.cards.length) return out + '<p class="note">考点速记正在整理中。</p></main>' + tabs('cards');
-    THEMES.forEach(function (t) {
-      var list = DB.cards.filter(function (c) { return c.t === t.id; });
+    if (ui.cth && theme(ui.cth).id !== ui.cth) ui.cth = '';
+    var deck = cardDeck(), at = -1;
+    deck.forEach(function (c, i) { if (c.id === ui.card) at = i; });
+    if (at < 0) { deck.forEach(function (c, i) { if (at < 0 && !c.x) at = i; }); if (at < 0) at = 0; }
+    var cur = deck[at], t = theme(cur.t), ti = cardTitle(cur), prev = deck[at - 1], next = deck[at + 1] || (deck.length > 1 ? deck[0] : null);
+    out += '<div class="kf" role="group" aria-label="按主题看"><button class="chip" data-a="cth" data-v="" aria-pressed="' + !ui.cth + '">全部<b>' + DB.cards.length + '</b></button>' + THEMES.map(function (th) {
+      var k = DB.cards.filter(function (c) { return c.t === th.id; }).length;
+      return k ? '<button class="chip t-' + th.id + '" data-a="cth" data-v="' + th.id + '" aria-pressed="' + (ui.cth === th.id) + '" aria-label="' + th.zh + '，' + k + ' 张">' + icon(th.id) + TH_SHORT[th.id] + '<b>' + k + '</b></button>' : '';
+    }).join('') + '</div>';
+    out += '<article class="kc t-' + t.id + (cur.x ? ' lk' : '') + '" id="kc" aria-label="' + esc(cur.title) + '"><header class="kc-head">' + hex('deco') +
+      '<p class="kc-top"><span class="kc-th">' + icon(t.id) + t.zh + '</span><span class="kc-pos">第 <b>' + (at + 1) + '</b> / ' + deck.length + ' 张</span></p>' +
+      '<h2>' + esc(ti[0]) + '</h2>' + (ti[1] ? '<p class="kc-fr" lang="fr">' + esc(ti[1]) + '</p>' : '') + '</header><div class="kc-body"><p class="kc-lead">' + esc(cur.lead) + '</p>';
+    if (cur.x) {
+      out += '<div class="kc-lock">' + hexBadge(icon('lock')) + '<p>' + (cur.n ? '还有 <b class="num">' + cur.n + '</b> 条要点' : '要点还没开放') + '</p><button class="btn" data-a="locked">解锁</button></div>';
+    } else {
+      out += '<ul class="facts">' + cur.p.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
+        (cur.v && cur.v.length ? '<ul class="kc-voc">' + cur.v.map(function (v) {
+          var inner = '<b lang="fr">' + esc(v[0]) + '</b><span>' + esc(v[1]) + '</span>';
+          return '<li>' + (canSpeak ? '<button class="voc" data-a="word" data-v="' + esc(v[0]) + '" aria-label="听 ' + esc(v[0]) + '：' + esc(v[1]) + '">' + inner + '</button>' : '<span class="voc">' + inner + '</span>') + '</li>';
+        }).join('') + '</ul>' : '') +
+        (cur.s || []).filter(function (i) { return DB.src[i]; }).map(function (i) { return '<a class="kc-src" href="' + esc(DB.src[i][1]) + '" target="_blank" rel="noopener">官方讲义：<span lang="fr">' + esc(DB.src[i][0]) + '</span> ↗</a>'; }).join('');
+    }
+    out += '</div><footer class="kc-nav"><button class="sq" data-a="card" data-v="' + (prev ? esc(prev.id) : '') + '" aria-label="上一张"' + (prev ? '' : ' disabled') + '>' + icon('back') + '</button>' +
+      '<button class="btn ghost grow" data-a="card" data-v="' + (next ? esc(next.id) : '') + '"' + (next ? '' : ' disabled') + '>' + (deck[at + 1] || !next ? '下一张' : '回到第 1 张') + icon('next') + '</button></footer></article>';
+    // every card of the deck, by theme: a shelf that scrolls sideways (all themes) or a grid (one theme)
+    THEMES.forEach(function (th) {
+      var list = deck.filter(function (c) { return c.t === th.id; });
       if (!list.length) return;
-      out += '<section class="stack"><h2>' + t.zh + '（' + list.length + '）</h2><ul class="qlist">' + list.map(function (c) {
-        var open = !c.x && !!ui.open['k' + c.id];
-        var row = '<li><button class="crow" data-a="' + (c.x ? 'locked' : 'open') + '" data-v="k' + esc(c.id) + '" aria-expanded="' + open + '"><span class="grow"><span class="ct">' + esc(c.title) + '</span><span class="cl">' + esc(c.lead) + '</span></span>' +
-          '<span class="m more" aria-hidden="true">' + (c.x ? lockMark() : (open ? '−' : '+')) + '</span></button>';
-        if (open) {
-          row += '<div class="detail"><ul class="facts">' + c.p.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
-            (c.v && c.v.length ? '<ul class="words mini">' + c.v.map(function (v) { return '<li><button class="w" lang="fr" data-a="word" data-v="' + esc(v[0]) + '">' + esc(v[0]) + '</button><span>' + esc(v[1]) + '</span></li>'; }).join('') + '</ul>' : '') +
-            (c.s || []).filter(function (i) { return DB.src[i]; }).map(function (i) { return '<a class="small" href="' + esc(DB.src[i][1]) + '" target="_blank" rel="noopener">官方讲义：<span lang="fr">' + esc(DB.src[i][0]) + '</span> ↗</a>'; }).join('') + '</div>';
-        }
-        return row + '</li>';
+      out += '<section class="ks t-' + th.id + (ui.cth ? ' grid' : '') + '"><h2 class="sec-h">' + hexBadge(icon(th.id), 'solid') + '<span class="grow">' + th.zh + '</span><b class="num">' + list.length + '</b></h2><ul>' + list.map(function (c) {
+        return '<li><button class="kmini' + (c.x ? ' lk' : '') + '" data-a="card" data-v="' + esc(c.id) + '"' + (c.id === cur.id ? ' aria-current="true"' : '') + '><span class="kn">' + (deck.indexOf(c) + 1) + (c.x ? lockMark() : '') + '</span><span class="ct">' + esc(cardTitle(c)[0]) + '</span></button></li>';
       }).join('') + '</ul></section>';
     });
     if (!unlocked()) out += payBlock('解锁全部 ' + DB.cards.length + ' 张考点速记');
     return out + '</main>' + tabs('cards');
+  }
+  // the page is drawn again after every tap: give the keyboard its place back
+  function refocus(sel) {
+    var el = document.querySelector(sel);
+    if (el && !el.disabled) { try { el.focus({ preventScroll: true }); } catch (e) { /* not essential */ } }
+  }
+  // after a tap on previous / next / a tile: the new card starts at the top of the screen
+  function showCard() {
+    var el = document.getElementById('kc');
+    if (!el) return;
+    var r = el.getBoundingClientRect();
+    if (r.top < 0 || r.top > window.innerHeight * 0.45) { try { el.scrollIntoView({ block: 'start' }); } catch (e) { el.scrollIntoView(true); } }
   }
   // 考前一页: the numbers, years and names worth a last look the night before (data/sheet.json). Free for everyone.
   var sheetWait = null, canPrint = typeof window.print === 'function' && !/MicroMessenger/i.test(navigator.userAgent);
@@ -1250,41 +1292,41 @@
     });
     return ev.sort(function (a, b) { return a.t - b.t || b.t2 - a.t2; });
   }
+  // the timeline: a chunky pill per year on a rail, one colour per century (the five theme colours in turn);
+  // yellow = the years the sheet marks as the ones to know, outlined = the building of Europe
   function figTimeline(d) {
-    var ev = sheetDated(d), W = 340, AX = 92, YX = AX - 13, LX = AX + 17, y = 4, cent = 0, rules = '', marks = '', rows = '', bars = '', hasEu = false;
+    var ev = sheetDated(d), W = 340, PX = 4, PW = 72, RX = PX + PW / 2, LX = PX + PW + 12, y = 2, cent = 0, era = -1, heads = '', rows = '', spans = '', hasEu = false;
     ev.forEach(function (e, i) {
       var c = Math.floor(e.t / 100) + 1;
       if (c !== cent) {
-        cent = c; y += i ? 8 : 0;
-        rules += '<path class="v-rule" d="M0 ' + (y + 20) + 'H' + W + '"/>' + sTx(LX, y + 14, c + ' 世纪', 'v-2 v-cap', 11.5);
-        y += 30;
+        cent = c; era++; y += i ? 12 : 0;
+        heads += '<g class="v-e' + (era % 5) + '"><rect class="v-era" x="' + PX + '" y="' + y + '" width="' + PW + '" height="22" rx="11"/>' + sTx(RX, y + 15.5, c + ' 世纪', 'v-t', 12, 'middle') + '</g>';
+        y += 32;
       }
-      var lines = sWrap(e.label, 15.6), by = y + 17, row = '', h;
-      e.y = by - 6;
-      if (e.hl) row += '<rect class="v-hl" x="' + (YX - 50) + '" y="' + (by - 17) + '" width="54" height="22" rx="2"/>';
-      row += '<text class="v-num' + (e.hl ? ' v-on' : '') + '" x="' + YX + '" y="' + by + '" font-size="20" text-anchor="end">' + e.t +
-        (e.t2 ? '<tspan class="v-2" x="' + YX + '" dy="16" font-size="13.5">–' + e.t2 + '</tspan>' : '') + '</text>';
-      row += '<text font-size="14" x="' + LX + '" y="' + (by - 1) + '">' + lines.map(function (l, j) { return '<tspan x="' + LX + '"' + (j ? ' dy="19"' : '') + '>' + esc(l) + '</tspan>'; }).join('') + '</text>';
-      h = lines.length * 19;
-      if (e.fr) { row += sTx(LX, by - 1 + h - 3, esc(e.fr), 'v-fr', 11.5).replace('<text ', '<text lang="fr" '); h += 15; }
+      var lines = sWrap(e.label, 17.4), ph = e.t2 ? 48 : 28, row, h = lines.length * 19;
+      e.y = y; e.era = era % 5;
+      row = '<rect class="' + (e.hl ? 'v-hl' : 'v-pill') + (e.eu ? ' v-eu' : '') + '" x="' + PX + '" y="' + y + '" width="' + PW + '" height="' + ph + '" rx="14"/>' +
+        '<text class="v-num ' + (e.hl ? 'v-on' : (e.eu ? 'v-k' : 'v-w')) + '" x="' + RX + '" y="' + (y + 20) + '" font-size="17" text-anchor="middle">' + e.t +
+        (e.t2 ? '<tspan x="' + RX + '" dy="19" font-size="16">–' + e.t2 + '</tspan>' : '') + '</text>';
+      row += '<text font-size="14" x="' + LX + '" y="' + (y + 19) + '">' + lines.map(function (l, j) { return '<tspan x="' + LX + '"' + (j ? ' dy="19"' : '') + '>' + esc(l) + '</tspan>'; }).join('') + '</text>';
+      if (e.fr) { row += sTx(LX, y + 19 + h - 3, esc(e.fr), 'v-fr', 11.5).replace('<text ', '<text lang="fr" '); h += 15; }
       if (e.eu) hasEu = true;
-      rows += '<g class="tl-row" data-t="' + e.t + '">' + row + '</g>';
-      y += Math.max(h, e.t2 ? 36 : 0) + 11;
+      rows += '<g class="tl-row v-e' + e.era + '" data-t="' + e.t + '">' + row + '</g>';
+      e.b = y + ph;
+      y += Math.max(h + 4, ph) + 10;
     });
     ev.forEach(function (e, i) {
-      if (e.t2) {   // a war: a bar along the margin that holds the years inside it
-        var last = e;
-        ev.forEach(function (o, j) { if (j > i && o.t <= e.t2) last = o; });
-        bars += '<rect class="v-bar" x="' + (AX - 5) + '" y="' + (e.y - 9) + '" width="10" height="' + (last.y - e.y + (last === e ? 32 : 18)) + '" rx="5"/>';
-      }
-      marks += '<circle class="' + (e.eu ? 'v-ring' : 'v-dot') + '" cx="' + AX + '" cy="' + e.y + '" r="' + (e.eu ? 4 : 4.2) + '"/>';
+      if (!e.t2) return;   // a war: a coloured stretch of the rail down to the last year inside it
+      var last = e;
+      ev.forEach(function (o, j) { if (j > i && o.t <= e.t2) last = o; });
+      if (last !== e) spans += '<path class="v-span v-e' + e.era + '" d="M' + RX + ' ' + (e.y + 10) + 'V' + (last.b - 6) + '"/>';
     });
-    y += 6;
-    var foot = '<circle class="v-dot" cx="' + (AX) + '" cy="' + (y + 10) + '" r="4.2"/>' + sTx(LX, y + 14, '法国', 'v-2', 11.5) +
-      (hasEu ? '<circle class="v-ring" cx="' + (LX + 52) + '" cy="' + (y + 10) + '" r="4"/>' + sTx(LX + 63, y + 14, '欧洲建设', 'v-2', 11.5) : '');
-    return sSvg(W, y + 24, 'v-tl', '时间线', '', rules + '<path class="v-margin" d="M' + AX + ' 0V' + (y + 24) + '"/>' + bars + marks + rows + foot);
+    var foot = '<g class="v-e2"><rect class="v-pill" x="' + (PX + 18) + '" y="' + (y + 4) + '" width="36" height="14" rx="7"/></g>' + sTx(LX, y + 15.5, '法国', 'v-2', 12) +
+      (hasEu ? '<rect class="v-pill v-eu" x="' + (LX + 40) + '" y="' + (y + 4) + '" width="36" height="14" rx="7"/>' + sTx(LX + 84, y + 15.5, '欧洲建设', 'v-2', 12) : '') +
+      '<rect class="v-hl" data-legend="1" x="' + (LX + 148) + '" y="' + (y + 4) + '" width="36" height="14" rx="7"/>' + sTx(LX + 192, y + 15.5, '必记', 'v-2', 12);
+    return sSvg(W, y + 24, 'v-tl', '时间线', '', '<path class="v-rail" d="M' + RX + ' 12V' + (y - 14) + '"/>' + spans + heads + rows + foot);
   }
-  // 三权分立: three blocks, who sits in each, and the arrows the sheet supports (who elects, who appoints)
+  // 三权分立: three solid blocks, who sits in each, and the arrows the sheet supports (who elects, who appoints)
   function figInst(d) {
     var pw = (d.groups.filter(function (g) { return g.id === 'pouvoirs'; })[0] || { items: [] }).items;
     if (pw.length < 5) return '';
@@ -1292,42 +1334,71 @@
     var dep = byFr('chiffres', /députés/), sen = byFr('chiffres', /sénateurs/), t5 = byFr('vote', /députés/), t6 = byFr('vote', /sénateurs/);
     var adult = byFr('vote', /majorité/), nat = sheetItem(d, 'vote', function (it) { return /国籍/.test(it.k); });
     var pres = byFr('pouvoirs', /président/), pm = byFr('pouvoirs', /ministre/);
-    var W = 340, TOP = 56, BOT = 290, o = '';
+    var W = 340, TOP = 58, B = TOP + 30, BOT = 288, o = '';
     var part = function (it) { var a = it.v.split('：'); return a.length > 1 ? [a[0].replace(/（.*）/, ''), a.slice(1).join('：')] : ['', it.v]; };
     var frLines = function (x, y, s, max, anchor) { return sWords(s, max).map(function (l, i) { return sTx(x, y + i * 12.5, esc(l), 'v-fr', 10.8, anchor).replace('<text ', '<text lang="fr" '); }).join(''); };
-    var box = function (x, y, w, h) { return '<rect class="v-box" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="5"/>'; };
-    var arrow = function (x, y1, y2) { return '<path class="v-arrow" d="M' + x + ' ' + y1 + 'V' + (y2 - 2) + 'M' + (x - 4.5) + ' ' + (y2 - 7.5) + 'l4.5 5.5 4.5-5.5"/>'; };
-    var block = function (x, w, it) {
-      var p = part(it), cx = x + w / 2, vw = p[1].length * 15 + 10;
-      return '<rect class="v-block" x="' + x + '" y="' + TOP + '" width="' + w + '" height="' + (BOT - TOP) + '" rx="7"/>' +
-        sTx(x + 9, TOP + 19, esc(it.k), 'v-b v-t', 14) +
-        sTx(cx, 219, esc(p[0]), 'v-2', 11.5, 'middle') +
-        '<rect class="v-hl" x="' + (cx - vw / 2) + '" y="227" width="' + vw + '" height="21" rx="2"/>' + sTx(cx, 243, esc(p[1]), 'v-on v-t', 15, 'middle') +
-        (it.fr ? frLines(cx, 264, it.fr, w > 80 ? 22 : 10, 'middle') : '');
+    var box = function (x, y, w, h) { return '<rect class="v-box" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="9"/>'; };
+    var arrow = function (x, y1, y2, word) {
+      var dd = 'M' + x + ' ' + y1 + 'V' + (y2 - 3) + 'M' + (x - 5) + ' ' + (y2 - 9) + 'l5 6 5-6';
+      return '<path class="v-arrow-b" d="' + dd + '"/><path class="v-arrow" d="' + dd + '"/>' +
+        '<rect class="v-lab" x="' + (x + 8) + '" y="' + ((y1 + y2) / 2 - 12) + '" width="34" height="19" rx="9.5"/>' + sTx(x + 25, (y1 + y2) / 2 + 2, word, 'v-t', 11.5, 'middle');
+    };
+    var block = function (x, w, it, n, right) {
+      var p = part(it), cx = x + w / 2;
+      return '<g class="v-e' + n + '"><rect class="v-blk" x="' + x + '" y="' + TOP + '" width="' + w + '" height="' + (BOT - TOP) + '" rx="13"/>' +
+        sTx(right ? x + w - 10 : x + 10, TOP + 20, esc(it.k), 'v-w v-t', 15, right ? 'end' : '') + '</g>' +
+        box(x + 6, 210, w - 12, 72) + sTx(cx, 226, esc(p[0]), 'v-2', 11.5, 'middle') + sTx(cx, 245, esc(p[1]), 'v-t', 15, 'middle') +
+        (it.fr ? frLines(cx, 260, it.fr, w > 80 ? 22 : 10, 'middle') : '');
     };
     var chamber = function (x, zh, fr, n, term) {
-      var cx = x + 33, s = box(x, 82, 66, 122) + sTx(cx, 100, zh, 'v-t', 13, 'middle') + frLines(cx, 113, fr, 10, 'middle');
+      var cx = x + 33, s = box(x, B, 66, 116) + sTx(cx, B + 18, zh, 'v-t', 13, 'middle') + frLines(cx, B + 31, fr, 10, 'middle');
       if (n) {
-        s += (n.hl ? '<rect class="v-hl" x="' + (cx - 27) + '" y="141" width="54" height="26" rx="2"/>' : '') +
-          sTx(cx, 162, esc(n.k), 'v-num' + (n.hl ? ' v-on' : ''), 25, 'middle') + (n.fr ? frLines(cx, 180, n.fr, 12, 'middle') : '');
+        s += (n.hl ? '<rect class="v-hl" x="' + (cx - 27) + '" y="' + (B + 55) + '" width="54" height="26" rx="8"/>' : '') +
+          sTx(cx, B + 76, esc(n.k), 'v-num' + (n.hl ? ' v-on' : ''), 25, 'middle') + (n.fr ? frLines(cx, B + 93, n.fr, 12, 'middle') : '');
       }
-      if (term) s += sTx(cx, 197, '任期 ' + esc(term.k), 'v-2', 11.5, 'middle');
+      if (term) s += sTx(cx, B + 109, '任期 ' + esc(term.k), 'v-2', 11.5, 'middle');
       return s;
     };
     // citizens, and what they elect directly
     var who = [adult && adult.k, nat && nat.k].filter(Boolean).join(' · ');
-    o += box(52, 5, 216, 30) + sTx(who ? 66 : 160, 25, '公民', 'v-t', 14, who ? '' : 'middle') + (who ? sTx(256, 24.5, esc(who), 'v-2', 11.5, 'end') : '');
-    o += block(6, 146, pw[0]) + block(160, 104, pw[1]) + block(272, 62, pw[2]);
-    o += arrow(64, 35, 82) + sTx(70, 49, '选举', 'v-b', 11.5) + arrow(238, 35, 82) + sTx(244, 49, '选举', 'v-b', 11.5);
+    o += '<rect class="v-cit" x="46" y="4" width="228" height="30" rx="15"/>' + sTx(who ? 62 : 160, 24, '公民', 'v-w v-t', 15, who ? '' : 'middle') + (who ? sTx(260, 23.5, esc(who), 'v-w', 12, 'end') : '');
+    o += block(6, 146, pw[0], 1, true) + block(160, 104, pw[1], 2, false) + block(272, 62, pw[2], 0, false);
     o += chamber(12, '国民议会', 'Assemblée nationale', dep, t5) + chamber(80, '参议院', 'Sénat', sen, t6);
-    if (pres) o += box(166, 82, 92, 50) + sTx(212, 100, esc(pres.k) + (t5 ? ' · ' + esc(t5.k) : ''), 'v-t', 13, 'middle') + frLines(212, 113, pres.fr || '', 16, 'middle');
-    if (pm) o += arrow(212, 132, 160) + sTx(219, 150, '任命', 'v-b', 11.5) + box(166, 160, 92, 44) + sTx(212, 178, esc(pm.k) + '和政府', 'v-t', 13, 'middle') + frLines(212, 192, pm.fr || '', 18, 'middle');
-    o += '<svg class="v-pic" x="281" y="116" width="44" height="44" viewBox="0 0 24 24">' + ICON.droits + '</svg>';
-    return sSvg(W, BOT + 6, 'v-inst', '三权分立示意图', pw.map(function (it) { return it.k + '：' + it.v + (it.fr ? '（' + it.fr + '）' : ''); }).join('；'), o);
+    if (pres) o += box(166, B, 92, 50) + sTx(212, B + 17, esc(pres.k) + (t5 ? ' · ' + esc(t5.k) : ''), 'v-t', 13, 'middle') + frLines(212, B + 29.5, pres.fr || '', 16, 'middle');
+    if (pm) o += box(166, B + 78, 92, 38) + sTx(212, B + 94, esc(pm.k) + '和政府', 'v-t', 13, 'middle') + frLines(212, B + 107, pm.fr || '', 18, 'middle');
+    o += arrow(45, 34, B, '选举') + arrow(236, 34, B, '选举') + (pm ? arrow(196, B + 50, B + 78, '任命') : '');
+    o += '<svg class="v-pic v-pic-w" x="281" y="' + (B + 36) + '" width="44" height="44" viewBox="0 0 24 24">' + ICON.droits + '</svg>';
+    return sSvg(W, BOT + 4, 'v-inst', '三权分立示意图', pw.map(function (it) { return it.k + '：' + it.v + (it.fr ? '（' + it.fr + '）' : ''); }).join('；'), o);
+  }
+  // the points of one open line of a path written by tools/map.mjs ("M x y l dx dy l dx dy …")
+  function pathPts(d) {
+    var n = (d.match(/-?\d*\.?\d+/g) || []).map(Number), pts = [], x = 0, y = 0;
+    for (var i = 0; i + 1 < n.length; i += 2) { if (i) { x += n[i]; y += n[i + 1]; } else { x = n[0]; y = n[1]; } pts.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]); }
+    return pts;
+  }
+  // the sea: each long open coast line, closed along the edges of the drawing (west and north for the Atlantic
+  // and the Channel, south and east for the Mediterranean). A sketch, like the rest of the map.
+  function mapSeas(m) {
+    var out = '';
+    m.coast.split(/(?=M)/).forEach(function (sub) {
+      var p = pathPts(sub), a = p[0], b = p[p.length - 1];
+      if (p.length < 12 || Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) < 12) return;   // islands close on themselves
+      var west = Math.min(a[0], b[0]) < m.w * 0.3, ends;
+      if (west) { if (a[1] < b[1]) p.reverse(); ends = [[p[p.length - 1][0] + 24, 0], [0, 0], [0, p[0][1] + 5]]; }
+      else { if (a[0] < b[0]) p.reverse(); ends = [[p[p.length - 1][0] - 12, m.h], [m.w, m.h], [m.w, p[0][1] + 5]]; }
+      out += '<path class="v-seabg" d="M' + p.concat(ends).map(function (q) { return q[0] + ' ' + q[1]; }).join('L') + 'z"/>';
+    });
+    return out;
+  }
+  function hexAt(x, y, r, cls) {
+    var h = Math.round(r * 86.6) / 100, r2 = r / 2;
+    return '<path class="' + cls + '" d="M' + (x + r) + ' ' + y + 'l' + (-r2) + ' ' + h + 'h' + (-r) + 'l' + (-r2) + ' ' + (-h) + 'l' + r2 + ' ' + (-h) + 'h' + r + 'z"/>';
   }
   // the map: outline, borders and labels come projected from tools/map.mjs (sheet.json, key "map")
   function figMap(m, big) {
-    var o = '<path class="v-land" d="' + m.land + '"/><path class="v-border" d="' + m.border + '"/><path class="v-coast" d="' + m.coast + '"/>';
+    var clip = 'mapclip' + (big ? 'b' : 's');
+    var o = '<clipPath id="' + clip + '"><rect width="' + m.w + '" height="' + m.h + '" rx="14"/></clipPath><g clip-path="url(#' + clip + ')"><rect class="v-ground" width="' + m.w + '" height="' + m.h + '"/>' + mapSeas(m) +
+      '<path class="v-land0" d="' + m.land + '"/><path class="v-land" d="' + m.land + '"/></g><path class="v-border" d="' + m.border + '"/><path class="v-coast" d="' + m.coast + '"/>';
     var lab = function (it, cls, size, extra) {
       if (big && !(cls.indexOf('v-t v-halo') === 0 && it.a === 'middle' && it.y < it.p[1])) extra = true;   // the French name goes under the Chinese one unless a dot is there
       return '<text class="' + cls + '" x="' + it.x + '" y="' + it.y + '" font-size="' + size + '" text-anchor="' + (it.a || 'middle') + '" data-k="' + esc(it.k) + '">' + esc(it.k) +
@@ -1336,45 +1407,45 @@
     m.rivers.forEach(function (r) { o += '<path class="v-river" d="' + r.d + '"/>'; });
     m.mounts.forEach(function (r) { r.pk.forEach(function (p) { o += '<path class="v-peak" d="M' + (p[0] - 5) + ' ' + (p[1] + 3) + 'l5-7 5 7"/>'; }); });
     m.tops.forEach(function (r) { o += '<path class="v-top" d="M' + (r.p[0] - 5) + ' ' + (r.p[1] + 3.5) + 'l5-8 5 8z"/>'; });
-    m.seas.forEach(function (r) { o += lab(r, 'v-sea', 12.5, true); });
-    m.lands.forEach(function (r) { if (r.p) o += '<circle class="v-city v-far" cx="' + r.p[0] + '" cy="' + r.p[1] + '" r="2"/>'; o += lab(r, 'v-2 v-far', 11.5); });
-    m.rivers.forEach(function (r) { o += lab(r, 'v-b' + (r.sea ? '' : ' v-halo'), 11); });
-    m.mounts.concat(m.tops).forEach(function (r) { o += lab(r, 'v-2 v-halo', 11); });
-    m.isles.forEach(function (r) { o += lab(r, 'v-t', 11.5); });
+    m.seas.forEach(function (r) { o += lab(r, 'v-sea', 13, true); });
+    m.lands.forEach(function (r) { if (r.p) o += hexAt(r.p[0], r.p[1], 2.6, 'v-city v-far'); o += lab(r, 'v-2 v-far v-t', 11.5); });
+    m.rivers.forEach(function (r) { o += lab(r, 'v-b' + (r.sea ? '' : ' v-halo'), 11.5); });
+    m.mounts.concat(m.tops).forEach(function (r) { o += lab(r, 'v-2 v-halo', 11.5); });
+    m.isles.forEach(function (r) { o += lab(r, 'v-t', 12); });
     m.cities.forEach(function (r) {
-      o += (r.cap ? '<circle class="v-hl" cx="' + r.p[0] + '" cy="' + r.p[1] + '" r="6.5"/>' : '') + '<circle class="v-city' + (r.cap ? ' v-on' : '') + '" cx="' + r.p[0] + '" cy="' + r.p[1] + '" r="' + (r.cap ? 3.2 : 2.5) + '"/>' + lab(r, 'v-t v-halo', r.cap ? 13 : 11.5);
+      o += (r.cap ? hexAt(r.p[0], r.p[1], 7.5, 'v-hl v-cap') + hexAt(r.p[0], r.p[1], 3.4, 'v-city v-on') : hexAt(r.p[0], r.p[1], 3.8, 'v-city')) + lab(r, 'v-t v-halo', r.cap ? 13.5 : 12);
     });
     // the overseas departments, by sea, under the map
-    var y = m.h + 6, cw = m.w / m.dom.length;
-    o += '<path class="v-rule" d="M0 ' + y + 'H' + m.w + '"/>';
+    var y = m.h + 10, cw = m.w / m.dom.length, rowsMax = Math.max.apply(null, m.dom.map(function (g) { return g.items.length; })), step = big ? 23 : 18;
     m.dom.forEach(function (g, i) {
-      var x = Math.round(i * cw + 8);
-      o += sTx(x, y + 17, esc(g.sea), 'v-2 v-cap', 11, '');
+      var x = Math.round(i * cw) + 2;
+      o += '<rect class="v-dom" x="' + x + '" y="' + y + '" width="' + (Math.round(cw) - 6) + '" height="' + (34 + rowsMax * step) + '" rx="10"/>' + sTx(x + 9, y + 18, esc(g.sea), 'v-sea v-domsea', 11.5, '');
       g.items.forEach(function (it, j) {
-        var yy = y + 34 + j * (big ? 22 : 16);
-        o += '<circle class="v-ring" cx="' + (x + 4) + '" cy="' + (yy - 4.5) + '" r="3"/>' +
-          '<text class="v-t" x="' + (x + 12) + '" y="' + yy + '" font-size="12" data-k="' + esc(it.k) + '">' + esc(it.k) + (big ? '<tspan class="v-fr" lang="fr" font-size="7.6" x="' + (x + 12) + '" dy="9">' + esc(it.fr) + '</tspan>' : '') + '</text>';
+        var yy = y + 38 + j * step;
+        o += hexAt(x + 13, yy - 4.5, 3.6, 'v-city') +
+          '<text class="v-t" x="' + (x + 21) + '" y="' + yy + '" font-size="12.5" data-k="' + esc(it.k) + '">' + esc(it.k) + (big ? '<tspan class="v-fr" lang="fr" font-size="7.6" x="' + (x + 21) + '" dy="9">' + esc(it.fr) + '</tspan>' : '') + '</text>';
       });
     });
-    var rowsMax = Math.max.apply(null, m.dom.map(function (g) { return g.items.length; }));
-    return sSvg(m.w, y + 26 + rowsMax * (big ? 22 : 16), 'v-map' + (big ? ' big' : ''), '法国本土地图和海外省', '', o);
+    return sSvg(m.w, y + 36 + rowsMax * step, 'v-map' + (big ? ' big' : ''), '法国本土地图和海外省', '', o);
   }
   var SHEET_FIG = {
-    inst: { t: '三权分立', n: '谁选谁，谁管什么', draw: function (d) { return figInst(d); } },
-    tl: { t: '时间线', n: '', draw: function (d) { return figTimeline(d); } },
-    map: { t: '法国地图', n: '', draw: function (d, big) { return d.map ? figMap(d.map, big) : ''; } }
+    inst: { t: '三权分立', th: 'institutions', draw: function (d) { return figInst(d); } },
+    tl: { t: '时间线', th: 'histoire', draw: function (d) { return figTimeline(d); } },
+    map: { t: '法国地图', th: 'brand', ic: 'register', draw: function (d, big) { return d.map ? figMap(d.map, big) : ''; } }
   };
+  var ZOOM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.500" cy="10.500" r="6"/><path d="m15 15 5 5M10.500 8v5M8 10.500h5"/></svg>';
+  // a drawing as a card: title bar in a theme colour, a 放大 button, the drawing itself (a tap on it enlarges too)
   function sheetFig(d, id, gid, cap) {
     var f = SHEET_FIG[id], svg = f.draw(d), g = gid ? d.groups.filter(function (x) { return x.id === gid; })[0] : null, title = g ? esc(g.title) : f.t;
     if (!svg) return '';
-    return '<figure class="sh-fig" id="fig-' + id + '"' + (gid ? ' data-g="' + gid + '"' : '') + '><figcaption><h3>' + title + '</h3>' + (f.n ? '<span>' + f.n + '</span>' : '') +
-      '<button class="sh-zoom" data-a="fig" data-v="' + id + '" aria-label="放大' + f.t + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5M10.5 8v5M8 10.5h5"/></svg></button></figcaption>' +
+    return '<figure class="sh-fig t-' + f.th + '" id="fig-' + id + '"' + (gid ? ' data-g="' + gid + '"' : '') + '><figcaption>' + icon(f.ic || f.th) + '<h3>' + title + '</h3>' +
+      '<button class="sh-zoom" data-a="fig" data-v="' + id + '" aria-label="放大' + f.t + '">' + ZOOM + '放大</button></figcaption>' +
       '<div class="sh-draw" data-a="fig" data-v="' + id + '">' + svg + '</div>' + (cap ? '<p class="sh-cap">' + cap + '</p>' : '') + '</figure>';
   }
   function openFig(id) {
     var f = SHEET_FIG[id], d = DB.sheet;
     if (!f || !d) return;
-    ui.modal = { title: f.t, body: '<div class="sh-zoomed' + (id === 'map' ? ' wide' : '') + '">' + f.draw(d, true) + '</div>' + (id === 'map' ? '<p class="small">可以左右、上下拖动。示意图，不按精确比例。</p>' : ''), actions: [{ label: '关闭', a: 'close', cls: 'quiet' }] };
+    ui.modal = { title: f.t, body: '<div class="sh-zoomed' + (id === 'map' ? ' wide' : '') + '">' + f.draw(d, true) + '</div>' + (id === 'map' ? '<p class="small">可以拖动。示意图，不按比例。</p>' : ''), actions: [{ label: '关闭', a: 'close', cls: 'quiet' }] };
     render();
   }
   // small drawings for the tiles and the symbols (24 x 24, same pen as ICON)
@@ -1385,7 +1456,7 @@
     '112': '<path d="M7 4h2.800l1.400 4-1.900 1.400a10 10 0 0 0 5.300 5.300l1.400-1.900 4 1.400V17a2.500 2.500 0 0 1-2.500 2.500A13 13 0 0 1 4.500 6.500 2.500 2.500 0 0 1 7 4z"/>',
     '119': '<circle cx="12" cy="7.500" r="3"/><path d="M6.500 20v-3a5.500 5.500 0 0 1 11 0v3"/>',
     '3919': '<circle cx="12" cy="9" r="5"/><path d="M12 14v6.500M9 17.500h6"/>',
-    drapeau: '<path d="M4.500 3.500v17"/><path class="p-b" d="M4.500 5h5v10h-5z"/><path d="M9.500 5h5v10h-5z"/><path class="p-r" d="M14.500 5h5v10h-5z"/>',
+    drapeau: '<path d="M4.500 3.500v17"/><path class="p-b" d="M4.500 5h5v10h-5z"/><path class="p-w" d="M9.500 5h5v10h-5z"/><path class="p-r" d="M14.500 5h5v10h-5z"/>',
     marseillaise: '<path d="M9 17.500V6.500l9-2v11"/><circle cx="6.800" cy="17.500" r="2.200"/><circle cx="15.800" cy="15.500" r="2.200"/>',
     marianne: '<path d="M4.500 17c.2-6.300 3.300-10.500 8-10.500 3.400 0 5.800 1.700 6 4.300.1 1.700-1.100 2.800-2.500 2.500-1.300-.3-1.800-1.600-1.100-2.700"/><path d="M12.500 6.500c2.300 2.200 3.500 5.500 3.500 10.500"/><path d="M3.500 17h14v3h-14z"/><circle cx="8.300" cy="13.200" r="1.300"/>',
     devise: '<path d="M3.500 9 12 4l8.500 5z"/><path d="M5 9v3h14V9M6.500 12v8M17.500 12v8M4 20h16M9 15h6"/>',
@@ -1394,30 +1465,36 @@
   function sheetPic(n, extra) {
     return SHEET_PIC[n] ? '<svg class="sh-pic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + SHEET_PIC[n] + (extra || '') + '</svg>' : '';
   }
+  // the colour of each group of the sheet: the theme it belongs to
+  var SHEET_TH = { urgence: 'societe', symboles: 'principes', chiffres: 'institutions', vote: 'institutions', pouvoirs: 'institutions', dates: 'histoire', geo: 'histoire', outremer: 'histoire', ue: 'droits', personnes: 'histoire', culture: 'histoire', laicite: 'principes', interdits: 'droits', vie: 'societe' };
+  var SHEET_NUM = /^(约?)(\d[\d–]*)(\D{0,2})$/;   // a number with at most a short unit: 577, 约35000, 5年, 3–16岁, 35小时
+  function sheetFr(it) { return it.fr ? ' <i lang="fr">' + esc(it.fr) + '</i>' : ''; }
   function sheetLi(it, pic) {
-    return '<li>' + (pic || '') + '<b class="k' + (/^[\d约]/.test(it.k) ? ' n' : '') + (it.hl ? ' hl' : '') + '">' + esc(it.k) + '</b><span class="v">' + esc(it.v) + (it.fr ? ' <i lang="fr">' + esc(it.fr) + '</i>' : '') + '</span></li>';
+    return '<li>' + (pic || '') + '<span class="grow"><b class="k' + (/^[\d约]/.test(it.k) ? ' n' : '') + (it.hl ? ' hl' : '') + '">' + esc(it.k) + '</b><span class="v">' + esc(it.v) + sheetFr(it) + '</span></span></li>';
   }
-  // one group of the sheet. how: 'card' (default), 'tiles' (big numbers), 'pics' (a drawing in front of each line);
-  // skip(it) leaves out the items a drawing already shows in full
+  // one group of the sheet. how: 'tiles' (the numbers as stat tiles with a big numeral, the rest as rows),
+  // 'pics' (a drawing in front of each row), default: rows. skip(it) leaves out the items a drawing already shows in full
   function sheetGroup(g, how, skip) {
-    var items = skip ? g.items.filter(function (it) { return !skip(it); }) : g.items;
+    var items = skip ? g.items.filter(function (it) { return !skip(it); }) : g.items, th = SHEET_TH[g.id] || 'brand';
     if (!items.length) return '';
-    if (how === 'tiles') {
-      return '<section class="sh-tiles" data-g="' + esc(g.id) + '"><h3>' + esc(g.title) + '</h3><ul class="n' + (items.length % 3 ? 2 : 3) + '">' + items.map(function (it) {
-        return '<li>' + sheetPic(it.k) + '<b class="k n' + (it.hl ? ' hl' : '') + '">' + esc(it.k) + '</b><span class="v">' + esc(it.v) + (it.fr ? ' <i lang="fr">' + esc(it.fr) + '</i>' : '') + '</span></li>';
-      }).join('') + '</ul></section>';
-    }
+    var head = '<h3 class="sec-h">' + hexBadge(icon(th === 'brand' ? 'sheet' : th), 'solid') + '<span class="grow">' + esc(g.title) + '</span></h3>';
+    var nums = how === 'tiles' ? items.filter(function (it) { return SHEET_NUM.test(it.k); }) : [], rest = items.filter(function (it) { return nums.indexOf(it) < 0; });
     var pics = how === 'pics' ? ['drapeau', 'marseillaise', 'marianne', 'devise', 'fete'] : null;
-    return '<section class="sh-card' + (g.wide || pics ? ' wide' : '') + (pics ? ' pics' : '') + '" data-g="' + esc(g.id) + '"><h3>' + esc(g.title) + '</h3><ul>' + items.map(function (it, i) {
-      return sheetLi(it, pics ? sheetPic(pics[i], pics[i] === 'fete' ? '<text x="12" y="17.3" text-anchor="middle" font-size="7.5" stroke="none" fill="currentColor" font-weight="700">14</text>' : '') : '');
-    }).join('') + '</ul></section>';
+    var rows = rest.length ? '<ul class="sh-rows">' + rest.map(function (it, i) {
+      return sheetLi(it, pics ? hexBadge(sheetPic(pics[i], pics[i] === 'fete' ? '<text x="12" y="17.3" text-anchor="middle" font-size="7.500" stroke="none" fill="currentColor" font-weight="700">14</text>' : '')) : '');
+    }).join('') + '</ul>' : '';
+    if (!nums.length) return '<section class="sh-card t-' + th + (pics ? ' pics' : '') + '" data-g="' + esc(g.id) + '">' + head + rows + '</section>';
+    return '<section class="sh-tiles t-' + th + '" data-g="' + esc(g.id) + '">' + head + '<ul class="sh-nums">' + nums.map(function (it) {
+      var m = SHEET_NUM.exec(it.k);
+      return '<li><b class="k n' + (it.hl ? ' hl' : '') + (m[2].length > 4 ? ' long' : '') + '">' + (g.id === 'urgence' ? sheetPic(it.k) : '') + '<span>' + (m[1] ? '<small>' + m[1] + '</small>' : '') + m[2] + (m[3] ? '<small>' + esc(m[3]) + '</small>' : '') + '</span></b><span class="v">' + esc(it.v) + sheetFr(it) + '</span></li>';
+    }).join('') + '</ul>' + rows + '</section>';
   }
   function vSheet() {
     loadSheet();
     var know = 0, situ = 0;
     THEMES.forEach(function (t) { know += t.k; situ += t.s; });
     var out = '<main class="wrap sheetpage">' + pagehead('速记', levelChip()) + studyNav('sheet') +
-      '<p class="sub sh-top">考前最后看一眼。只帮你记，不能代替做题。<a class="link" href="#home">去练题</a></p>' +
+      '<div class="sh-top"><p class="sub">只帮你记，不能代替做题。<a class="link" href="#home">去练题</a></p>' + (canPrint ? '<button class="chip" data-a="print">' + icon('sheet') + '打印</button>' : '') + '</div>' +
       '<ul class="nums sh-exam" aria-label="考试本身"><li><b>' + EXAM.n + '</b><span>题单选</span></li><li><b>' + EXAM.min + '</b><span>分钟</span></li>' +
       '<li class="pass"><b>' + EXAM.pass + '</b><span>题及格</span></li><li><b>' + know + '<i>+</i>' + situ + '</b><span>知识 + 情景</span></li></ul>';
     var d = DB.sheet;
@@ -1433,16 +1510,16 @@
     var near = d.map ? d.map.lands.filter(function (n) { return n.s !== 'H071'; }) : [];
     out += '<div class="sh-grid">' +
       grp('urgence', 'tiles') +
-      sheetFig(d, 'inst', '', '') + grp('pouvoirs', '', drawn.inst ? function (it) { return /权$/.test(it.k); } : null) + grp('chiffres') + grp('vote') +
+      sheetFig(d, 'inst', '', '') + grp('pouvoirs', '', drawn.inst ? function (it) { return /权$/.test(it.k); } : null) + grp('chiffres', 'tiles') + grp('vote', 'tiles') +
       grp('symboles', 'pics') +
       sheetFig(d, 'tl', 'dates', '') + grp('ue', 'tiles', function (it) { return !!isYearKey(it.k); }) + grp('personnes') + grp('culture') +
-      sheetFig(d, 'map', '', drawn.map ? '示意图，不按精确比例，河流只画大致走向。虚线是陆地边界：本土有 ' + near.length + ' 个邻国。点图可以放大，看法语名。' : '') + grp('geo') + grp('outremer') +
-      d.groups.map(function (g) { return grp(g.id); }).join('') + '</div>';
+      sheetFig(d, 'map', '', drawn.map ? '示意图，不按比例。虚线是陆地边界：本土有 ' + near.length + ' 个邻国。' : '') + grp('geo') + grp('outremer') +
+      d.groups.map(function (g) { return grp(g.id, 'tiles'); }).join('') + '</div>';
     if (d.rule) {
-      out += '<section class="sh-rule" id="sh-rule"><h3>' + esc(d.rule.title) + '</h3><p>' + esc(d.rule.lead) + '</p><ol>' +
-        d.rule.points.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol></section>';
+      out += '<section class="sh-rule" id="sh-rule"><div class="sh-rule-top">' + six('neutral', 76) + '<h3>' + esc(d.rule.title) + '</h3></div><p class="sh-say">' + esc(d.rule.lead) + '</p><ol>' +
+        d.rule.points.map(function (x) { var cut = x.indexOf('。') + 1; return '<li>' + (cut > 0 && cut < x.length ? '<b>' + esc(x.slice(0, cut)) + '</b>' + esc(x.slice(cut)) : esc(x)) + '</li>'; }).join('') + '</ol></section>';
     }
-    out += '<p class="small sh-asof">整理于 ' + esc(d.asof) + '。' + (canPrint ? '<button class="link" data-a="print">打印或存成 PDF</button>' : '') + '</p>';
+    out += '<p class="small sh-asof">整理于 ' + esc(d.asof) + '</p>';
     return out + disclaimer() + '</main>' + tabs('cards');
   }
   function lockMark() { return icon('lock', 'lockm'); }
@@ -1456,30 +1533,37 @@
     return DB.rc;
   }
   function sessOpen(ri) { var v = ui.open['s' + ri]; return v === undefined ? ri < 2 : v; }
+  // a recalled question in the feed: reviewRow with the theme colour on its number and, from two mentions, the heat
+  function recallRow(x, n, key, heat) {
+    var hot = heat >= 2 ? '<span class="rq-x"><span class="tag hot">机经提到 ' + heat + ' 次</span></span>' : '';
+    if (x.r && DB.byId[x.r]) return reviewRow(DB.byId[x.r], n, null, [0, 1, 2, 3], key).replace('<li>', '<li class="rq t-' + theme(x.t).id + '">').replace('</button>', hot + '</button>');
+    if (x.r) return '<li class="rq t-' + esc(x.t) + '"><button class="qrow" data-a="locked" aria-label="' + esc(x.q) + '（讲解未解锁）"><span class="i">' + n + '</span><span class="s" lang="fr">' + esc(x.q) + '</span><span class="m more" aria-hidden="true">' + lockMark() + '</span>' + hot + '</button></li>';
+    return '<li class="rq t-' + esc(x.t) + '"><div class="qrow"><span class="i">' + n + '</span><span class="s zhs">' + esc(x.x) + '</span><span class="m"></span><span class="rq-x"><span class="tag' + (x.k === 's' ? '' : ' g') + '">' + (x.k === 's' ? '情景题' : '知识题') + '</span></span></div></li>';
+  }
   function vRecall() {
-    var out = '<main class="wrap">' + topbar('机经 · 考生回忆', 'practice') +
-      '<p class="sub">考生在网上分享的考后回忆，按考试时间整理。来源于网络，不是官方公布的题目，回忆可能有出入，仅供参考。</p>';
+    var out = '<main class="wrap">' + topbar('机经', 'practice') +
+      '<p class="rc-note"><b class="hex-b">非官方</b>来源于网络的考生回忆，不是官方题目，可能有出入。</p>';
     if (!DB.recall.length) return out + '<div class="card empty">' + six('sleep', 96) + '<p>还没有收录。收集到考生的回忆后会更新在这里。</p></div></main>' + tabs('practice');
     var rc = recallIds(), hot = rc.ids.filter(function (id) { return rc.n[id] >= 2; });
     var can = rc.ids.filter(function (id) { return DB.byId[id]; });
-    out += '<section class="hero plain"><div class="row between"><span class="sub">已收录</span><span class="tag">' + DB.recall.length + ' 场考试的回忆</span></div>' +
-      '<div class="big">' + rc.ids.length + '<small> 道被回忆到的题</small></div>' +
-      (hot.length ? '<p class="sub">其中 <span class="num">' + hot.length + '</span> 道被不同的人提到两次以上。</p>' : '') +
-      (can.length ? '<button class="btn wide" data-a="start" data-v="all|recall">练这些题 · 每组最多 ' + SET + ' 题</button>' : '') + '</section>';
-    out += '<section class="stack"><h2>按考试时间</h2><ul class="qlist">';
+    out += '<section class="hero rc-hero">' + heroDeco() + '<ul class="rc-nums"><li><b>' + DB.recall.length + '</b><span>场考试</span></li><li><b>' + rc.ids.length + '</b><span>道题</span></li>' +
+      (hot.length ? '<li class="rc-hot"><b>' + hot.length + '</b><span>提到 2 次以上</span></li>' : '') + '</ul>' +
+      (can.length ? '<button class="btn wide" data-a="start" data-v="all|recall">' + icon('play') + '练这些题</button>' : '') + '</section>';
+    out += '<p class="rc-legend" aria-label="题号的颜色是主题">' + THEMES.map(function (t) { return '<span class="tag th t-' + t.id + '"><i></i>' + TH_SHORT[t.id] + '</span>'; }).join('') + '</p><ol class="rc-feed">';
+    var month = '';
     DB.recall.forEach(function (r, ri) {
       var ym = r.w.split('-'), isOpen = sessOpen(ri);
-      out += '<li><button class="crow" data-a="sess" data-v="' + ri + '" aria-expanded="' + isOpen + '"><span class="grow"><span class="ct">' + ym[0] + ' 年 ' + Number(ym[1]) + ' 月' + (LEVELS[r.l] ? ' · ' + LEVELS[r.l].zh : '') + '</span><span class="cl">回忆到 ' + r.i.length + ' 题' + (r.n ? ' · ' + esc(r.n) : '') + '</span></span><span class="m more" aria-hidden="true">' + (isOpen ? '−' : '+') + '</span></button>';
-      if (!isOpen) { out += '</li>'; return; }
-      out += '<ul class="qlist inner">' +
-        r.i.map(function (x, i) {
-          var tag = '<span class="tag' + (x.k === 's' ? '' : ' g') + '">' + (x.k === 's' ? '情景题' : '知识题') + '</span>';
-          if (x.r && DB.byId[x.r]) return reviewRow(DB.byId[x.r], i + 1, null, [0, 1, 2, 3], 'r' + ri + '-' + i);
-          if (x.r) return '<li><button class="qrow" data-a="locked"><span class="i">' + (i + 1) + '</span><span class="s" lang="fr">' + esc(x.q) + '</span><span class="m more" aria-hidden="true">' + lockMark() + '</span></button></li>';
-          return '<li><div class="qrow"><span class="i">' + (i + 1) + '</span><span class="s zhs">' + esc(x.x) + ' ' + tag + '</span><span class="m"></span></div></li>';
-        }).join('') + '</ul></li>';
+      if (r.w !== month) {
+        out += (month ? '</ul></li>' : '') + '<li class="rc-month"><h2 class="rc-m">' + ym[0] + ' 年 ' + Number(ym[1]) + ' 月</h2><ul class="rc-list">';
+        month = r.w;
+      }
+      out += '<li class="rc-s' + (isOpen ? ' on' : '') + '"><button class="crow" data-a="sess" data-v="' + ri + '" aria-expanded="' + isOpen + '"><span class="grow"><span class="rc-top">' +
+        (LEVELS[r.l] ? '<span class="tag lv-' + r.l + '">' + LEVELS[r.l].zh + '</span>' : '') + '<span class="rc-n"><b>' + r.i.length + '</b> 题</span></span>' +
+        (r.n ? '<span class="cl">' + esc(r.n) + '</span>' : '') + '</span><span class="m more" aria-hidden="true">' + (isOpen ? '−' : '+') + '</span></button>';
+      if (isOpen) out += '<ul class="qlist inner">' + r.i.map(function (x, i) { return recallRow(x, i + 1, 'r' + ri + '-' + i, x.r ? rc.n[x.r] : 0); }).join('') + '</ul>';
+      out += '</li>';
     });
-    out += '</ul></section>';
+    out += '</ul></li></ol>';
     if (!unlocked()) out += payBlock('解锁后可以看每道题的讲解');
     return out + '</main>' + tabs('practice');
   }
@@ -2017,6 +2101,15 @@
     'rd-how': function () { readyHow(); render(); },
     back: function () { go(ui.prev && VIEWS[ui.prev] && ui.prev !== 'quiz' && ui.prev !== route() ? ui.prev : 'me'); },
     sess: function (v) { ui.open['s' + v] = !sessOpen(Number(v)); render(); },
+    cth: function (v) { ui.cth = v || ''; ui.card = null; render(); refocus('.kf [aria-pressed="true"]'); },
+    card: function (v, el) {
+      if (!v) return;
+      var nav = el && el.parentNode && /kc-nav/.test(el.parentNode.className) ? (/\bsq\b/.test(el.className) ? '.kc-nav .sq' : '.kc-nav .btn') : '';
+      ui.card = v; hush(); render(); showCard();
+      if (nav) refocus(nav);
+    },
+    wmask: function () { ui.wmask = !ui.wmask; ui.wrev = {}; render(); refocus('[data-a="wmask"]'); },
+    wrev: function (v) { ui.wrev = ui.wrev || {}; ui.wrev[v] = 1; render(); },
     reset: function () {
       ui.modal = { title: '清空全部练习记录？', body: '<p>练习进度、错题本和模拟考试成绩都会被清空。解锁状态不受影响。</p>', actions: [{ label: '清空', a: 'reset-yes', cls: 'danger' }, { label: '取消', a: 'close', cls: 'quiet' }] };
       render();

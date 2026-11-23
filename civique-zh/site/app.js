@@ -1411,7 +1411,21 @@
     app.innerHTML = VIEWS[r]() + modal();
     if (top) window.scrollTo(0, 0);
   }
-  window.addEventListener('hashchange', function () { hush(); ui.modal = null; if (route() !== 'unlock') ui.msg = null; render(true); });
+  window.addEventListener('hashchange', function () { try { hush(); ui.modal = null; if (route() !== 'unlock') ui.msg = null; render(true); } catch (e) { oops(e, 'page ' + route()); } });
+  // Something broke on this device: say so on the screen, with enough detail to find it from a screenshot.
+  function oops(e, where) {
+    try {
+      var msg = (e && (e.message || e.reason && (e.reason.message || e.reason))) || String(e), at = '';
+      var st = e && e.stack ? String(e.stack).split('\n') : [];
+      for (var i = 0; i < st.length && !at; i++) { var m = /(\w[\w.]*)?@?[^\s(]*?:(\d+):(\d+)/.exec(st[i]); if (m && st[i].indexOf(msg) < 0) at = (m[1] || '') + ' ' + m[2] + ':' + m[3]; }
+      var box = document.getElementById('oops');
+      if (!box) { box = document.createElement('div'); box.id = 'oops'; box.setAttribute('role', 'alert'); document.body.appendChild(box); }
+      box.innerHTML = '<b>这一步出错了</b><span>请截图发给卖家，然后刷新页面再试。</span><code>' + esc(where || '') + ' · ' + esc(String(msg).slice(0, 160)) + (at ? ' · ' + esc(at) : '') + ' · ' + esc((DB.free && DB.free.built) || '') + '</code><button type="button" id="oops-x">关闭</button>';
+      document.getElementById('oops-x').onclick = function () { if (box.parentNode) box.parentNode.removeChild(box); };
+    } catch (x) { /* the notice itself must never throw */ }
+  }
+  window.addEventListener('error', function (ev) { if (ev && ev.error) oops(ev.error, 'script'); });
+  window.addEventListener('unhandledrejection', function (ev) { oops(ev && ev.reason, 'promise'); });
 
   setInterval(function () {
     if (!S.exam) return;
@@ -1545,7 +1559,7 @@
     var a = el.getAttribute('data-a');
     if (!ACT[a]) return;
     ev.preventDefault();
-    ACT[a](el.getAttribute('data-v'), el, ev);
+    try { ACT[a](el.getAttribute('data-v'), el, ev); } catch (e) { oops(e, 'tap ' + a); }
   });
   document.addEventListener('input', function (ev) {
     if (ev.target.id !== 'cq') return;

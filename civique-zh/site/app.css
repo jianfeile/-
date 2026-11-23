@@ -758,3 +758,10 @@ div.opt { cursor: default; }
 .chk-res.no .chk-stamp { color: var(--ok); }
 .chk-res.maybe .chk-stamp { color: var(--blue); }
 .tw-pop { cursor: pointer; }
+/* ---- error notice ---- */
+#oops { position: fixed; z-index: 40; left: 10px; right: 10px; top: calc(10px + env(safe-area-inset-top, 0px)); padding: 12px 14px; border-radius: 12px; background: var(--bad-soft); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--bad), 0 8px 24px var(--shade); display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.5; }
+#oops b { color: var(--bad); }
+#oops code { font-family: var(--font-num); font-size: 12px; overflow-wrap: anywhere; color: var(--ink2); }
+#oops button { align-self: flex-end; min-height: 36px; padding: 4px 14px; border-radius: 9px; background: var(--paper); font-weight: 600; }
+
+button, a, [data-a] { touch-action: manipulation; }

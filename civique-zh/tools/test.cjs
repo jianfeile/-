@@ -957,6 +957,24 @@ if (CODE) {
   }
   await ctx.close();
 
+  // ---- a failure on the device is said on the screen, with its cause
+  ({ ctx, page } = await fresh());
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  {
+    const before = errors.length;
+    await page.evaluate(() => { JSON.stringify = function () { throw new Error('boom-for-test'); }; });   // the next saved action fails
+    await page.locator('[data-a="target"][data-v="cr"]').click();
+    await page.waitForSelector('#oops');
+    const said = await page.locator('#oops').innerText();
+    check('a failing tap shows a notice with the cause', /出错了/.test(said) && /boom-for-test/.test(said) && /tap target/.test(said), said.replace(/\n/g, ' '));
+    await page.locator('#oops-x').click();
+    check('the notice can be closed', await page.locator('#oops').count() === 0);
+    errors.length = before;
+  }
+  await ctx.close();
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

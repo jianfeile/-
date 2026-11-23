@@ -636,6 +636,43 @@ if (CODE) {
   await ctx.close();
 
   // ---- registering for the real exam: steps and the centre finder
+  console.log('do I have to take it');
+  ({ ctx, page } = await fresh());
+  await page.goto(base);
+  await page.locator('.wl-check').click();
+  await page.waitForSelector('.chk-opt');
+  check('self-check is reachable from the welcome screen without choosing an exam', await page.locator('.chk-opt').count() === 5 && Object.keys(await state(page)).indexOf('target') < 0 || !(await state(page)).target);
+  const pickPath = async (labels) => { await page.goto(base + '#about'); await page.goto(base + '#check'); if (await page.locator('.chk-said li').count()) await page.locator('[data-a="chk-back"][data-v="0"]').first().click(); for (const l of labels) await page.locator('.chk-opt', { hasText: l }).first().click(); await page.waitForSelector('.chk-res'); return { cls: await page.locator('.chk-res').getAttribute('class'), text: await page.locator('.chk-res').innerText() }; };
+  let cr = await pickPath(['续签']);
+  check('renewal: no exam', /\bno\b/.test(cr.cls) && /续签不需要/.test(cr.text), cr.text.slice(0, 60));
+  cr = await pickPath(['多年居留卡', '未满 65', '学生']);
+  check('student applying for a multi-year card: no exam', /\bno\b/.test(cr.cls));
+  cr = await pickPath(['多年居留卡', '未满 65', '工薪', '没有']);
+  check('employee who never studied in France: must take the multi-year exam', /\byes\b/.test(cr.cls) && /多年居留卡的考试/.test(cr.text) && await page.locator('[data-a="chk-go"][data-v="csp"]').count() === 1);
+  cr = await pickPath(['多年居留卡', '未满 65', '私人和家庭生活', '上过']);
+  check('studied in France: answer is "probably not, confirm", never a flat yes or no', /\bmaybe\b/.test(cr.cls) && /确认/.test(cr.text));
+  cr = await pickPath(['十年居留卡', '已满 65']);
+  check('over 65 applying for a resident card: no exam', /\bno\b/.test(cr.cls));
+  cr = await pickPath(['十年居留卡', '未满 65', '住满 5 年']);
+  check('five years of residence: must take the resident-card exam', /\byes\b/.test(cr.cls) && await page.locator('[data-a="chk-go"][data-v="cr"]').count() === 1);
+  cr = await pickPath(['申请入籍', '以声明方式']);
+  check('nationality by declaration: no exam', /\bno\b/.test(cr.cls));
+  cr = await pickPath(['申请入籍', '申请入籍，或恢复']);
+  check('naturalisation by decree: must take the naturalisation exam', /\byes\b/.test(cr.cls) && /入籍的考试/.test(cr.text));
+  check('every answer cites an official page and says it is not legal advice', await page.locator('.facts a[href^="https://www.service-public.gouv.fr/"]').count() >= 1 && /不是法律意见/.test(await page.locator('main').innerText()));
+  await page.locator('[data-a="chk-go"]').click();
+  await page.waitForSelector('.themes');
+  check('"start practising" sets the matching exam', (await state(page)).target === 'nat');
+  await page.goto(base + '#check');
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.locator('[data-a="chk-back"][data-v="0"]').first().click();
+  await page.locator('.chk-opt', { hasText: '多年居留卡' }).first().click();
+  await page.locator('.chk-opt', { hasText: '未满 65' }).first().click();
+  await page.waitForSelector('.chk-opt');
+  check('no sideways scroll at 320px on the self-check', await noOverflow(page));
+  await shot(page, '27-check-320');
+  await ctx.close();
+
   console.log('registration page');
   ({ ctx, page } = await fresh({ geolocation: { latitude: 45.764, longitude: 4.8357 }, permissions: ['geolocation'] }));
   await page.goto(base);

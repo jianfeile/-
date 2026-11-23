@@ -737,3 +737,24 @@ div.opt { cursor: default; }
 .rep-id .code { font-size: 24px; line-height: 1.2; -webkit-user-select: all; user-select: all; background: linear-gradient(transparent 12%, var(--hl) 12%, var(--hl) 90%, transparent 90%); color: var(--on-hl); padding: 0 6px; border-radius: 2px; }
 .rep-to { font-weight: 700; overflow-wrap: anywhere; -webkit-user-select: all; user-select: all; }
 .sheet .msg:empty { display: none; }
+/* ---- "do I have to take it?" self-check ---- */
+.wl-check { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 8px 14px; border-radius: 12px; background: var(--blue-soft); color: var(--ink); text-decoration: none; font-size: 14.5px; }
+.wl-check b { color: var(--blue); white-space: nowrap; }
+.chk-said { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.chk-said li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.chk-said .q { grid-column: 1; font-size: 13px; color: var(--ink2); }
+.chk-said .a { grid-column: 1; font-weight: 600; font-size: 15px; }
+.chk-said .link { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; min-width: 44px; text-align: center; }
+.chk-q h3 { font-size: 19px; line-height: 1.4; }
+.chk-opt { min-height: 64px; text-align: left; }
+.chk-opt .t2 { overflow-wrap: anywhere; }
+.chk-opt .go { color: var(--blue); font-weight: 700; font-size: 20px; }
+.chk-res { position: relative; border-radius: var(--r); background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--line); padding: 18px 16px 18px 30px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.chk-res::before { content: ""; position: absolute; left: 16px; top: 0; bottom: 0; width: 1.5px; background: var(--margin); }
+.chk-res h3 { font-size: 21px; line-height: 1.35; padding-right: 84px; }
+.chk-res p { font-size: 15px; line-height: 1.75; }
+.chk-stamp { position: absolute; right: 14px; top: 16px; padding: 3px 9px; border-radius: 5px; font-size: 14px; font-weight: 700; letter-spacing: .08em; white-space: nowrap; box-shadow: inset 0 0 0 1.5px currentColor; transform: rotate(-4deg); color: var(--ink2); }
+.chk-res.yes .chk-stamp { color: var(--bad); }
+.chk-res.no .chk-stamp { color: var(--ok); }
+.chk-res.maybe .chk-stamp { color: var(--blue); }
+

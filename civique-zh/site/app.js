@@ -812,6 +812,7 @@
       levelIds().map(function (lv) {
         return '<button class="pick" data-a="target" data-v="' + lv + '"><span class="grow"><span class="t1">' + LEVELS[lv].zh + '</span><br><span class="t2" lang="fr">' + LEVELS[lv].fr + '</span></span><span class="cnt"><b>' + n(lv) + '</b> 道官方题<span class="go" aria-hidden="true">›</span></span></button>';
       }).join('') +
+      '<a class="wl-check" href="#check"><span>不确定要不要考、考哪一种？</span><b>30 秒自测 ›</b></a>' +
       '<p class="small">每种申请的考题不一样。选错了没关系，之后可以在首页随时切换。</p></section>' +
       disclaimer() + '</main>' + tabs('home');
   }
@@ -1160,7 +1161,7 @@
     var out = '<main class="wrap">' + brand() + '<section class="stack"><h2>报名考试 · 全流程</h2>' +
       '<p class="sub">从报名到拿到通过证明的每一步。本站只帮你找到入口：报名和交费都在官方机构的网站上完成，本站不代办、不收报名费。</p>' +
       '<ol class="steps">' +
-      '<li><b>确认考哪一种</b><p>考试分三种：多年居留卡、十年居留卡、入籍。报名时要选对' + (lv ? '，你在首页选的是「' + LEVELS[lv].zh + '」' : '') + '。选错了，证明可能不能用于你的申请。</p></li>' +
+      '<li><b>确认要不要考、考哪一种</b><p><a class="link" href="#check">不确定？30 秒自测</a></p><p>考试分三种：多年居留卡、十年居留卡、入籍。报名时要选对' + (lv ? '，你在首页选的是「' + LEVELS[lv].zh + '」' : '') + '。选错了，证明可能不能用于你的申请。</p></li>' +
       '<li><b>准备好这几样</b><p>有效的居留证；居留证上的外国人号码（<span lang="fr">numéro étranger / AGDREF</span>）；一个常用邮箱（账号、通知和成绩都发到这里，记得看垃圾邮件箱）。</p></li>' +
       '<li><b>选考场，在官网报名</b><p>全法有两家官方指定的考试机构，任选一家，考试内容相同。费用由各考场自己定，每个考场不一样，报名前先问清楚。</p>' +
       '<ul class="facts"><li><span lang="fr">France Éducation International</span>：官方建议先联系想去的考场，确认场次和费用，再填预报名表；提交后会收到一封邮件，用来创建考生账号。<br><a class="link" href="https://test-civique.fr/inscription" target="_blank" rel="noopener">去填官方预报名表 ↗</a></li>' +
@@ -1178,6 +1179,103 @@
       '<p class="small">位置只在你的手机上用来计算距离，不会上传。距离是直线距离。名单取自 France Éducation International 官网' + (DB.centresAsOf ? '（' + DB.centresAsOf + '）' : '') + '，考场会增减，以<a href="https://www.france-education-international.fr/centres-d-examen/carte?type-centre=examen_civique" target="_blank" rel="noopener">官方地图 ↗</a>为准。巴黎工商会的考场不在这份名单里，请在<a href="' + cci + '" target="_blank" rel="noopener">它的网站 ↗</a>上按城市查。</p></section>';
     return out + disclaimer() + '</main>' + tabs('register');
   }
+  // ---------------------------------------------------------------- "do I have to take it?" (free self-check)
+  // A small decision tree written from three service-public.gouv.fr pages (F39530 checked 2026-02-10, F39426 checked
+  // 2026-07-16, F17048 checked 2026-06-26) and the Ministry's general information page. It gives a first answer and
+  // always points to the official page; where the official text does not settle a case, the answer says so.
+  var CHK_SRC = {
+    sejour: ['service-public：多年居留卡和十年居留卡的公民考试', 'https://www.service-public.gouv.fr/particuliers/vosdroits/F39530'],
+    nat: ['service-public：入籍的公民考试', 'https://www.service-public.gouv.fr/particuliers/vosdroits/F39426'],
+    cir: ['service-public：融入合同（CIR）谁要签', 'https://www.service-public.gouv.fr/particuliers/vosdroits/F17048'],
+    min: ['内政部：公民考试总体说明', 'https://formation-civique.interieur.gouv.fr/examen-civique/']
+  };
+  var CHK = {
+    start: { q: '你现在要办的是哪一件事？', o: [
+      { t: '第一次申请多年居留卡', fr: 'carte de séjour pluriannuelle（2 到 4 年）', n: 'cspAge' },
+      { t: '第一次申请十年居留卡', fr: 'carte de résident，含长期居民卡和永久居留卡', n: 'crAge' },
+      { t: '申请入籍', fr: 'nationalité française', n: 'nat' },
+      { t: '续签已经有的多年卡或十年卡', fr: 'renouvellement', r: 'renew' },
+      { t: '办一年期的临时居留卡', fr: 'carte de séjour temporaire（1 年）', r: 'cst' }
+    ] },
+    cspAge: { q: '你满 65 岁了吗？', o: [{ t: '已满 65 岁', r: 'age' }, { t: '未满 65 岁', n: 'cspTitle' }] },
+    cspTitle: { q: '你现在拿的是哪一类居留？', sub: '看居留卡或签证上写的类别。', o: [
+      { t: '工薪、经商或自由职业', fr: 'salarié · entrepreneur / profession libérale', n: 'cspStudy' },
+      { t: '私人和家庭生活', fr: 'vie privée et familiale：法国人配偶、法国孩子的父母、家庭团聚等', n: 'cspStudy' },
+      { t: '学生', fr: 'étudiant', r: 'cspNoCir' },
+      { t: '人才居留，或人才居留的家属', fr: 'talent · talent (famille)', r: 'cspTalent' },
+      { t: '访客、实习、临时工、季节工、互惠生、公司内部外派', fr: 'visiteur · stagiaire · travailleur temporaire · saisonnier · au pair · salarié détaché ICT', r: 'cspNoCir' },
+      { t: '因健康原因获得的居留', fr: 'raisons de santé', r: 'cspNoCir' },
+      { t: '难民、辅助保护、无国籍，或他们的家属', fr: 'réfugié · protection subsidiaire · apatride', r: 'cspProt' },
+      { t: '不清楚，或不在上面', r: 'unsure' }
+    ] },
+    cspStudy: { q: '你在法国上过学吗？', sub: '指在法国读过至少 1 个学年的高等教育（大学、高商、工程师学校等），或者在法国的中学读过至少 3 个学年。', o: [
+      { t: '上过，符合上面任意一条', r: 'cspDispense' }, { t: '没有', r: 'cspYes' }
+    ] },
+    crAge: { q: '你满 65 岁了吗？', o: [{ t: '已满 65 岁', r: 'age' }, { t: '未满 65 岁', n: 'crWhy' }] },
+    crWhy: { q: '你凭什么理由申请十年卡？', o: [
+      { t: '在法国合法连续住满 5 年', fr: 'carte de résident de longue durée-UE，包括人才居留、难民、辅助保护满 5 年的', r: 'crYes' },
+      { t: '法国人的配偶，或法国孩子的父母', fr: 'époux de Français · parent d’enfant français', r: 'crYes' },
+      { t: '家庭团聚，或十年卡持有人的配偶', fr: 'regroupement familial', r: 'crYes' },
+      { t: '申请永久居留卡', fr: 'carte de résident permanent', r: 'crYes' },
+      { t: '其他理由，或不清楚', r: 'crOther' }
+    ] },
+    nat: { q: '你通过哪种方式取得法国国籍？', o: [
+      { t: '申请入籍，或恢复法国国籍', fr: 'naturalisation · réintégration（par décret）', r: 'natYes' },
+      { t: '以声明方式取得', fr: 'par déclaration：和法国人结婚、法国人的直系长辈、法国人的兄弟姐妹', r: 'natNo' },
+      { t: '不清楚', r: 'natUnsure' }
+    ] }
+  };
+  var CHK_RES = {
+    renew: { v: 'no', h: '不用考', why: ['考试只针对第一次申请多年居留卡或十年居留卡，续签不需要。', '注意一种情况：如果你这次不是续签原来的卡，而是改为申请永久居留卡（carte de résident permanent），那算第一次申请这种卡，要考十年居留卡的考试。'], src: ['sejour', 'min'] },
+    cst: { v: 'no', h: '不用考', why: ['一年期的临时居留卡不要求公民考试。考试是在第一次申请多年居留卡或十年居留卡时才需要。', '可以先准备着：等你申请多年卡时就要用到，通过证明长期有效。'], src: ['sejour'] },
+    age: { v: 'no', h: '不用考', why: ['官方规定：满 65 岁的人申请多年居留卡或十年居留卡，不需要参加公民考试。'], src: ['sejour'] },
+    cspNoCir: { v: 'no', h: '不用考', why: ['官方规定：不需要签融入合同（CIR）的居留类别，申请多年居留卡时不要求公民考试。你这一类居留不用签融入合同。', '以后如果你换成别的居留类别（例如工薪、私人和家庭生活），或者申请十年卡、入籍，情况会不一样，到时再查一次。'], src: ['sejour', 'cir'] },
+    cspTalent: { v: 'no', h: '申请多年卡不用考', why: ['人才居留和它的家属卡不用签融入合同（CIR），申请多年居留卡时不要求公民考试。', '但是：人才居留住满 5 年后申请十年卡（长期居民卡），官方明确写了要考十年居留卡的考试。'], src: ['sejour', 'cir'] },
+    cspProt: { v: 'no', h: '不用考', why: ['官方页面写明：辅助保护受益人、无国籍人和他们的家属，申请多年居留卡不要求公民考试。内政部的总体说明里，国际保护受益人也不在考试范围内。', '但是：住满 5 年后申请长期居民十年卡时，官方写了要考。'], src: ['sejour', 'min'] },
+    cspDispense: { v: 'maybe', h: '很可能不用考，请向省政府确认', why: ['官方规定里，在法国读过至少 1 学年高等教育、或至少 3 学年中学的人，免签融入合同（CIR）。', '而内政部写的是：考试针对的是“签了融入合同”、想申请多年卡或十年卡的人。按这个说法，你很可能不用考。', '但官方页面没有逐字写明“免签融入合同的人免考”，各省政府的要求可能不同。递材料前请向你所在的省政府（préfecture）确认，或者看 ANEF 上给你列出的材料清单里有没有这一项。'], src: ['cir', 'min', 'sejour'] },
+    cspYes: { v: 'yes', lv: 'csp', h: '要考：多年居留卡的考试', why: ['你这一类居留要签融入合同（CIR），第一次申请多年居留卡时必须提交公民考试的通过证明。', '报名时选 mention « carte de séjour pluriannuelle »。如果你打算以后办十年卡，也可以直接考十年居留卡的考试：它的通过证明办多年卡同样有效。'], src: ['sejour', 'cir', 'min'] },
+    crYes: { v: 'yes', lv: 'cr', h: '要考：十年居留卡的考试', why: ['官方页面把你这种情况列在需要公民考试的十年卡申请里。第一次申请时必须提交通过证明。', '报名时选 mention « carte de résident »。'], src: ['sejour'] },
+    crOther: { v: 'maybe', h: '不一定，请对照官方页面', why: ['不是所有十年卡都要求公民考试。官方页面列出要考的有：法国人配偶、法国孩子的父母、家庭团聚或十年卡持有人的配偶、住满 5 年的长期居民卡、永久居留卡。', '不在这个范围里的十年卡（例如依法直接获得的十年卡），官方页面没有列为要考。请对照官方页面，或向省政府确认。'], src: ['sejour'] },
+    natYes: { v: 'yes', lv: 'nat', h: '要考：入籍的考试', why: ['通过法令入籍（naturalisation）或恢复国籍（réintégration），必须通过公民考试。', '报名时选 mention « naturalisation »。入籍的官方题目清单和居留卡的不是同一套。', '入籍没有“满 65 岁免考”的规定；只有因残疾或健康原因确实无法考试的，可以凭医生证明申请免除。'], src: ['nat'] },
+    natNo: { v: 'no', h: '不用考', why: ['官方规定：公民考试只针对通过法令取得国籍的程序。以声明方式取得国籍（和法国人结婚、法国人的直系长辈、法国人的兄弟姐妹）不需要参加公民考试。'], src: ['nat'] },
+    natUnsure: { v: 'maybe', h: '看你走的是哪种程序', why: ['自己申请、由政府审批的入籍（naturalisation par décret）要考。', '因为和法国人结婚等原因、以声明方式（par déclaration）取得国籍的不用考。', '不确定的话，看你准备提交的申请表名称，或对照官方页面。'], src: ['nat'] },
+    unsure: { v: 'maybe', h: '请对照官方页面', why: ['是否要考，取决于你的居留类别要不要签融入合同（CIR）。官方有一张表，列出了每一类居留要不要签。', '表里写“要签”的，第一次申请多年卡就要考；写“不用签”的不用考。'], src: ['cir', 'sejour'] }
+  };
+  function chkWalk() {
+    var path = ui.chk || [], node = CHK.start, said = [], res = null;
+    for (var i = 0; i < path.length && node; i++) {
+      var o = node.o[path[i]]; if (!o) break;
+      said.push({ q: node.q, t: o.t, at: i });
+      if (o.r) { res = CHK_RES[o.r]; node = null; } else node = CHK[o.n];
+    }
+    return { said: said, node: node, res: res };
+  }
+  function vCheck() {
+    var w = chkWalk(), out = '<main class="wrap">' + brand() + '<section class="stack"><h2>我要不要考？</h2>' +
+      '<p class="sub">回答两三个问题，告诉你要不要考、考哪一种。根据法国政府 service-public 网站的规定整理，免费，不用注册。</p></section>';
+    if (w.said.length) out += '<ol class="chk-said">' + w.said.map(function (s) {
+      return '<li><span class="q">' + esc(s.q) + '</span><span class="a">' + esc(s.t) + '</span><button class="link" data-a="chk-back" data-v="' + s.at + '">改</button></li>';
+    }).join('') + '</ol>';
+    if (w.node) {
+      out += '<section class="stack chk-q"><h3>' + esc(w.node.q) + '</h3>' + (w.node.sub ? '<p class="small">' + esc(w.node.sub) + '</p>' : '') +
+        w.node.o.map(function (o, i) {
+          return '<button class="pick chk-opt" data-a="chk-pick" data-v="' + i + '"><span class="grow"><span class="t1">' + esc(o.t) + '</span>' + (o.fr ? '<br><span class="t2" lang="fr">' + esc(o.fr) + '</span>' : '') + '</span><span class="go" aria-hidden="true">›</span></button>';
+        }).join('') + '</section>';
+    } else if (w.res) {
+      var r = w.res, lv = r.lv && DB.free.meta.counts[r.lv] ? r.lv : '';
+      out += '<section class="chk-res ' + r.v + '" role="status"><span class="chk-stamp">' + (r.v === 'yes' ? '要考' : r.v === 'no' ? '不用考' : '待确认') + '</span><h3>' + esc(r.h) + '</h3>' +
+        r.why.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') + '</section>';
+      out += '<div class="stack">' +
+        (lv ? '<button class="btn wide" data-a="chk-go" data-v="' + lv + '">开始练「' + LEVELS[lv].zh + '」的题</button><a class="btn ghost wide" href="#register">怎么报名、去哪考</a>'
+          : (r.v === 'maybe' ? '<a class="btn ghost wide" href="#home">先练着，不耽误</a>' : '')) +
+        '<button class="btn quiet wide" data-a="chk-back" data-v="0">重新回答</button></div>';
+      out += '<section class="stack"><h2>官方出处</h2><ul class="facts">' + r.src.map(function (k) {
+        return '<li><a href="' + CHK_SRC[k][1] + '" target="_blank" rel="noopener">' + esc(CHK_SRC[k][0]) + ' ↗</a></li>';
+      }).join('') + '</ul></section>';
+    }
+    out += '<p class="small">这是根据官方公开页面整理的初步判断，不是法律意见，也不能代替省政府（préfecture）的要求。规定可能调整，办理前请以官方页面和 ANEF 上给你的材料清单为准。本页的判断不适用于欧盟、欧洲经济区和瑞士公民，也不适用于持阿尔及利亚居留证（certificat de résidence）的人，他们另有规定。官方页面查阅于 2026-11-23。</p>';
+    return out + disclaimer() + '</main>' + tabs('about');
+  }
   function vAbout() {
     var out = '<main class="wrap">' + brand() + '<section class="stack"><h2>关于公民考试</h2><ul class="facts">' +
       '<li>从 2026 年 1 月 1 日起，第一次申请多年居留卡（<span lang="fr">carte de séjour pluriannuelle</span>）或十年居留卡（<span lang="fr">carte de résident</span>）要提交公民考试（<span lang="fr">examen civique</span>）的通过证明。续签不需要。</li>' +
@@ -1194,6 +1292,7 @@
       '<li><a href="https://formation-civique.interieur.gouv.fr/examen-civique/" target="_blank" rel="noopener">内政部：考试说明、官方题目清单和讲义（免费）↗</a></li>' +
       '<li><a href="https://www.service-public.gouv.fr/particuliers/vosdroits/F39530" target="_blank" rel="noopener">service-public：居留卡谁需要考、怎么报名 ↗</a></li>' +
       '<li><a href="https://www.service-public.gouv.fr/particuliers/vosdroits/F39426" target="_blank" rel="noopener">service-public：入籍的公民考试 ↗</a></li>' +
+      '<li><a href="#check">我要不要考、考哪一种：30 秒自测（本站整理）</a></li>' +
       '<li><a href="#register">报名流程和考场查询（本站整理）</a></li>' +
       '<li><a href="https://francais.cci-paris-idf.fr/candidat?produit=21" target="_blank" rel="noopener">考试机构一：巴黎工商会（CCI Paris Île-de-France）↗</a></li>' +
       '<li><a href="https://test-civique.fr/inscription" target="_blank" rel="noopener">考试机构二：France Éducation International 报名 ↗</a></li></ul>' +
@@ -1291,7 +1390,7 @@
   }
 
   // ---------------------------------------------------------------- routing + render
-  var VIEWS = { home: vHome, quiz: vQuiz, exam: vExam, result: vResult, mistakes: vMistakes, words: vWords, cards: vCards, sheet: vSheet, recall: vRecall, register: vRegister, about: vAbout, unlock: vUnlock };
+  var VIEWS = { home: vHome, quiz: vQuiz, exam: vExam, result: vResult, mistakes: vMistakes, words: vWords, cards: vCards, sheet: vSheet, recall: vRecall, register: vRegister, check: vCheck, about: vAbout, unlock: vUnlock };
   function route() { var h = (location.hash || '').replace(/^#/, ''); return VIEWS[h] ? h : 'home'; }
   function go(name) { if (route() === name) render(true); else location.hash = name; }
   function render(top) {
@@ -1426,6 +1525,9 @@
         ui.geoBusy = false; ui.geoMsg = '没能取得位置（浏览器没有授权定位，或者这里用不了）。可以直接输入城市、省号或邮编。'; render();
       }, { timeout: 10000, maximumAge: 600000 });
     },
+    'chk-pick': function (v) { var w = chkWalk(); if (!w.node || !w.node.o[Number(v)]) return; ui.chk = (ui.chk || []).slice(0, w.said.length).concat(Number(v)); render(true); },
+    'chk-back': function (v) { ui.chk = (ui.chk || []).slice(0, Number(v)); render(true); },
+    'chk-go': function (v) { if (!LEVELS[v]) return; if (S.target !== v) { S.target = v; S.sess = null; } save(); go('home'); },
     'reset-yes': function () { S.stats = {}; S.exams = []; S.days = {}; S.sess = null; S.exam = null; ui.modal = null; save(); render(true); }
   };
   document.addEventListener('click', function (ev) {

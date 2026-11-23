@@ -269,10 +269,12 @@
       if (x && x[1] && x[0] < x[1] && (!worst || x[0] / x[1] < worst.r)) worst = { id: t.id, zh: t.zh, r: x[0] / x[1], got: x[0], n: x[1] };
     });
     var r = readiness(), go = worst && counts(worst.id).todo ? worst : (r.weak && r.weak.todo ? r.weak : null);
-    var txt = worst ? '这次丢分最多的主题是「' + worst.zh + '」（' + worst.got + ' / ' + worst.n + '）。' : '这次各个主题都没有丢分。';
-    if (r.ready) txt += '按练习进度估算，现在去正式考试大概能对 <b>' + r.n + '</b> / ' + EXAM.n + ' 题，及格线 ' + EXAM.pass + ' 题（估算，不是保证）。';
-    return '<section class="card rd-next"><h2>把握度</h2><p>' + txt + '</p>' +
-      (go ? '<button class="btn wide" data-a="start" data-v="' + go.id + '|todo">去练：' + go.zh + '</button>' : '') + '</section>';
+    var lost = worst ? '这次丢分最多 · ' + worst.got + ' / ' + worst.n : '';
+    var row = go ? '<div class="rd-th t-' + go.id + '">' + hexBadge(icon(go.id), 'solid') + '<p><span class="small">' + (worst && go.id === worst.id ? lost : '练习里最弱的主题') + '</span><b>' + go.zh + '</b></p></div>'
+      : '<p class="rd-none">' + (worst ? '「' + worst.zh + '」' + lost : '各主题都没丢分') + '</p>';
+    return '<section class="card rd-next"><h2>下一步</h2>' + row +
+      (r.ready ? '<p class="rd-est"><span>把握度 <b>' + r.n + '</b> / ' + EXAM.n + ' · 及格线 ' + EXAM.pass + '</span><span class="tag warm">估算，不是保证</span></p>' : '') +
+      (go ? '<button class="btn wide" data-a="start" data-v="' + go.id + '|todo">去练最弱的主题</button>' : '') + '</section>';
   }
 
   // ---------------------------------------------------------------- data + unlock
@@ -517,7 +519,7 @@
     var passAt = x.mini ? MINI.pass : EXAM.pass;
     S.exams.unshift({ ts: Date.now(), target: S.target, mini: x.mini, score: score, n: x.ids.length, passAt: passAt, secs: Math.min(x.dur, Math.round((Date.now() - x.start) / 1000)), th: th, items: items });
     S.exams = S.exams.slice(0, 10);
-    S.exam = null; ui.resultIdx = 0; ui.open = {};
+    S.exam = null; ui.resultIdx = 0; ui.open = {}; ui.resOnly = false;
     save();
     ping(x.mini ? 'mini_done' : 'exam_done');
   }
@@ -818,11 +820,11 @@
   function demoBlock() {
     var q = demoQuestion();
     if (!q) return '';
-    var done = ui.demo !== undefined;
-    return '<section class="offer-sample wl-try"><span class="offer-stamp">先做一题</span>' +
+    var done = ui.demo !== undefined, ok = ui.demo === 0;
+    return '<section class="offer-sample wl-try' + (done ? ' done' : '') + '"><div class="wl-try-head"><h2 class="offer-stamp">先试一题</h2>' + (done ? '' : '<span class="tw-hint">点一个答案</span>') + '</div>' +
       question(q, { perm: DEMO_PERM, chosen: ui.demo, mode: 'demo' }) +
-      (done ? '<button class="wl-on" data-a="demo-next"><span>每道题都这样讲。<b>选你要考的类型，接着练</b></span><i aria-hidden="true">↓</i></button>'
-        : '<p class="tw-hint">点一个选项，看答案和中文讲解。法语词也可以点。</p>') + '</section>';
+      (done ? '<div class="wl-react ' + (ok ? 'good' : 'miss') + '">' + six(ok ? 'cheer' : 'console', 0, 'bob') + '<p class="say"><span>' + (ok ? '答对了！' : '没关系，') + '每题都这样讲</span></p></div>' +
+        '<button class="wl-on" data-a="demo-next"><b>选考试类型，接着练</b><i aria-hidden="true">↓</i></button>' : '') + '</section>';
   }
   // when the bank was built and when the official list was last read, with the number of questions
   function bankLine() {
@@ -871,26 +873,38 @@
   }
 
   // ---------------------------------------------------------------- views
+  // small pictures only the welcome and exam screens use (drawn like icon())
+  var PIC = {
+    csp: '<rect x="3" y="5.500" width="18" height="13" rx="2.500"/><circle cx="8.500" cy="10.800" r="1.900"/><path d="M13.500 10h4M13.500 13.500h4M6 15.500h5"/>',
+    cr: '<rect x="3" y="5.500" width="18" height="13" rx="2.500"/><path d="m9 8.400 1.100 2.300 2.500.3-1.900 1.700.5 2.500L9 14l-2.200 1.200.5-2.500-1.900-1.700 2.500-.3z" fill="currentColor" stroke="none"/><path d="M15 10h3M15 13.500h3"/>',
+    nat: '<rect x="5.500" y="3" width="13" height="18" rx="2.500"/><circle cx="12" cy="10" r="3"/><path d="M9.500 16.500h5"/>',
+    flag: '<path d="M6.500 21V4M6.500 4.500H18l-2.800 4 2.800 4H6.500"/>',
+    flagOn: '<path d="M6.500 21V4"/><path d="M6.500 4.500H18l-2.800 4 2.800 4H6.500z" fill="currentColor"/>',
+    grid: '<rect x="4" y="4" width="6.500" height="6.500" rx="1.800"/><rect x="13.500" y="4" width="6.500" height="6.500" rx="1.800"/><rect x="4" y="13.500" width="6.500" height="6.500" rx="1.800"/><rect x="13.500" y="13.500" width="6.500" height="6.500" rx="1.800"/>'
+  };
+  function pic(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + PIC[n] + '</svg>'; }
   function vChoose() {
     var meta = DB.free.meta, m = meta.counts;
     function n(lv) { var c = 0; THEMES.forEach(function (t) { c += m[lv][t.id].c; }); return c; }
-    var proof = [[meta.total, '道练习题'], [meta.cards, '张考点速记'], [DB.recall.length, '场考生回忆'], [meta.free, '道免费试做', 'free']]
+    var proof = [[meta.total, '道题'], [meta.cards, '张速记卡'], [DB.recall.length, '场机经'], [meta.free, '题免费', 'free']]
       .filter(function (p) { return p[0] > 0; });
     return '<main class="wrap wl">' +
-      '<header class="hero wl-hero">' + heroDeco() + six('cheer', 0, 'bob') + '<div class="txt"><p class="wl-kicker"><span lang="fr">examen civique</span> · 中文题库 · 非官方</p>' +
+      '<header class="hero wl-hero">' + heroDeco() + six('cheer', 0, 'bob') + '<div class="txt"><p class="say wl-hi"><span>你好，我是小六</span></p>' +
       '<h1>法国公民考试，<br>用中文<em>看懂每一题</em></h1>' +
-      '<p class="wl-lead">法语原题，每题都有中文翻译和讲解。</p></div></header>' +
+      '<p class="wl-lead"><b class="wl-un">非官方</b>法语原题 + 中文讲解</p></div></header>' +
       '<section class="wl-proof-wrap"><ul class="wl-proof" style="grid-template-columns:repeat(' + proof.length + ',minmax(0,1fr))">' + proof.map(function (p) {
         return '<li' + (p[2] ? ' class="' + p[2] + '"' : '') + '><b>' + p[0] + '</b><span>' + p[1] + '</span></li>';
       }).join('') + '</ul>' +
-      '<p class="small">' + (DB.recall.length ? '考生回忆（机经）来自网上的分享，不是官方公布的题目。' : '') + '另有<a href="#register">官方考点查询和报名步骤</a>。</p></section>' +
+      (DB.recall.length ? '<p class="small">机经是考生在网上分享的回忆，不是官方题目。</p>' : '') + '</section>' +
       demoBlock() +
-      '<section class="stack wl-next" id="pickexam"><div><p class="wl-step">免费开始，不用注册</p><h2>你准备申请哪一种？</h2></div>' +
+      '<section class="stack wl-next" id="pickexam"><div class="wl-next-head"><h2>你准备申请哪一种？</h2><span class="tag g">免费开始，不用注册</span></div>' +
       levelIds().map(function (lv) {
-        return '<button class="pick" data-a="target" data-v="' + lv + '"><span class="grow"><span class="t1">' + LEVELS[lv].zh + '</span><br><span class="t2" lang="fr">' + LEVELS[lv].fr + '</span></span><span class="cnt"><b>' + n(lv) + '</b> 道官方题<span class="go" aria-hidden="true">›</span></span></button>';
+        return '<button class="tile wl-pick lv-' + lv + '" data-a="target" data-v="' + lv + '">' + hex('deco') + '<span class="hexic white">' + hex() + pic(lv) + '</span>' +
+          '<span class="t1">' + LEVELS[lv].zh + '</span><span class="cnt"><b>' + n(lv) + '</b></span>' +
+          '<span class="t2" lang="fr">' + LEVELS[lv].fr + '</span><span class="u">道官方题</span></button>';
       }).join('') +
-      '<a class="wl-check" href="#check"><span>不确定要不要考、考哪一种？</span><b>30 秒自测 ›</b></a>' +
-      '<p class="small">每种申请的考题不一样。选错了没关系，之后可以在“我的”里随时切换。</p></section>' +
+      '<a class="wl-check" href="#check"><span>不确定要不要考？</span><b>30 秒自测' + icon('go') + '</b></a>' +
+      '<p class="small center">选错了没关系，随时在“我的”里换。</p></section>' +
       disclaimer() + '</main>' + tabs('home');
   }
   function vHome() {
@@ -1030,36 +1044,57 @@
     if (!x) {
       var un = unlocked(), hist = S.exams.filter(function (e) { return e.target === S.target; }).slice(0, 5), know = 0, situ = 0;
       THEMES.forEach(function (t) { know += t.k; situ += t.s; });
-      var out = '<main class="wrap">' + pagehead('模考', levelChip()) + '<section class="stack">' +
+      // the challenge card: the exam in three numbers and the one button
+      var out = '<main class="wrap">' + pagehead('模考', levelChip()) + '<section class="hero ex-hero">' + heroDeco() +
+        '<div class="ex-top">' + six('cheer', 0, 'bob') + '<p class="say"><span>和正式考试一样</span></p></div>' +
         '<ul class="nums n3"><li><b>' + EXAM.n + '</b><span>题单选</span></li><li><b>' + EXAM.min + '</b><span>分钟</span></li><li class="pass"><b>' + EXAM.pass + '</b><span>题及格</span></li></ul>' +
-        '<p class="sub">和正式考试一样的题量、时间和及格线。考试中只有法语，交卷后逐题看中文讲解。</p>';
-      out += un ? '<button class="btn wide lg" data-a="exam-start" data-v="full">开始考试</button>'
-        : '<button class="btn wide lg" data-a="exam-start" data-v="mini">免费试考 · ' + MINI.n + ' 题 ' + MINI.min + ' 分钟</button><p class="small center">试考从免费题里抽题，答对 ' + MINI.pass + ' 题算通过。完整的 ' + EXAM.n + ' 题模考解锁后开放。</p>';
-      out += '<ul class="rules"><li><span class="k">题型</span><span class="v"><b>' + know + '</b> 题知识题 + <b>' + situ + '</b> 题情景题</span></li>' +
-        '<li><span class="k">各主题</span><span class="v">' + THEMES.map(function (t) { return t.zh + ' <b>' + (t.k + t.s) + '</b>'; }).join('、') + '</span></li></ul></section>';
-      if (hist.length) out += '<section class="stack"><h2>最近的成绩</h2><ul class="split">' + hist.map(function (e) {
-        var idx = S.exams.indexOf(e);
-        return '<li><button class="link" data-a="result-show" data-v="' + idx + '">' + dateZh(e.ts) + (e.mini ? ' · 试考' : '') + '</button><span class="n' + (e.score >= e.passAt ? '' : ' lowv') + '">' + e.score + ' / ' + e.n + '</span></li>';
-      }).join('') + '</ul></section>';
+        '<p class="sub">考试中只有法语，交卷后看中文讲解</p>' +
+        (un ? '<button class="btn wide lg" data-a="exam-start" data-v="full">' + icon('play') + '开始考试</button>'
+          : '<button class="btn wide lg" data-a="exam-start" data-v="mini">' + icon('play') + '免费试考 · ' + MINI.n + ' 题 ' + MINI.min + ' 分钟</button>') + '</section>';
+      if (!un) out += '<p class="small center ex-note">试考从免费题里抽 ' + MINI.n + ' 题，对 ' + MINI.pass + ' 题通过。完整 ' + EXAM.n + ' 题模考解锁后开放。</p>';
+      // how the 40 questions are shared between the five themes
+      out += '<section class="card ex-mix"><div class="row between"><h2>' + EXAM.n + ' 题怎么分</h2><span class="tag"><b>' + know + '</b> 知识题 + <b>' + situ + '</b> 情景题</span></div>' +
+        themeMix(THEMES.map(function (t) { return [t, t.k + t.s]; }), '正式考试各主题的题数') +
+        '<details class="disc flat"><summary>五个主题</summary><ul class="in mix-key">' + THEMES.map(function (t) {
+          return '<li class="t-' + t.id + '"><i></i><span>' + t.zh + '</span><b>' + (t.k + t.s) + '</b></li>';
+        }).join('') + '</ul></details></section>';
+      if (hist.length) out += '<section class="stack"><h2>最近成绩</h2><div class="list">' + hist.map(function (e) {
+        var idx = S.exams.indexOf(e), ok = e.score >= e.passAt;
+        return '<button class="lrow ex-past ' + (ok ? 'pass' : 'fail') + '" data-a="result-show" data-v="' + idx + '"><span class="sc"><b>' + e.score + '</b> / ' + e.n + '</span>' +
+          '<span class="grow t2">' + dateZh(e.ts) + (e.mini ? ' · 试考' : '') + '</span><span class="tag ' + (ok ? 'g' : 'warm') + '">' + (ok ? '通过' : '差 ' + (e.passAt - e.score) + ' 题') + '</span><span class="go">' + icon('go') + '</span></button>';
+      }).join('') + '</div></section>';
       if (!un) out += payBlock('解锁完整模拟考试');
       return out + '</main>' + tabs('exam');
     }
-    var id = x.ids[x.i], q = DB.byId[id], left = examLeft(), last = x.i === x.ids.length - 1;
+    // the running exam: calm, French only, no mascot
+    var id = x.ids[x.i], q = DB.byId[id], left = examLeft(), n = x.ids.length, last = x.i === n - 1, flagged = !!x.flags[id];
     var answered = x.ids.filter(function (k) { return x.ans[k] !== undefined; }).length;
-    return '<main class="wrap bare"><div class="qbar"><span class="timer' + (left < 300 ? ' low' : '') + '" id="timer" aria-label="剩余时间">' + mmss(left) + '</span>' +
-      '<div class="bar" role="img" aria-label="已答 ' + answered + ' / ' + x.ids.length + '"><i style="width:' + Math.round(answered / x.ids.length * 100) + '%"></i></div>' +
-      '<button class="chip" data-a="exam-grid">第 ' + (x.i + 1) + ' 题 ▾</button></div>' +
-      question(q, { perm: permFor(x, id), chosen: x.ans[id], zh: false, mode: 'exam' }) +
-      '<div class="exam-tools"><button class="chip" data-a="exam-flag" aria-pressed="' + (x.flags[id] ? 'true' : 'false') + '">' + (x.flags[id] ? '已标记，稍后再看' : '标记这题') + '</button><button class="link" data-a="exam-quit">放弃本次考试</button></div></main>' +
+    return '<main class="wrap bare ex-run"><div class="qbar"><button class="sq" data-a="exam-quit" aria-label="放弃本次考试">' + icon('close') + '</button>' +
+      '<div class="bar" role="img" aria-label="已答 ' + answered + ' / ' + n + '"><i style="width:' + Math.round(answered / n * 100) + '%"></i></div>' +
+      '<span class="timer' + (left < 300 ? ' low' : '') + '" id="timer" aria-label="剩余时间">' + mmss(left) + '</span></div>' +
+      '<div class="ex-bar"><span class="pos">第 <b>' + (x.i + 1) + '</b> <small>/ ' + n + ' 题</small></span>' +
+      '<button class="chip ex-flag" data-a="exam-flag" aria-pressed="' + flagged + '" aria-label="' + (flagged ? '取消标记' : '标记这题，稍后再看') + '">' + pic(flagged ? 'flagOn' : 'flag') + (flagged ? '已标记' : '标记') + '</button>' +
+      '<button class="chip ex-nums" data-a="exam-grid" aria-label="题号：已答 ' + answered + ' / ' + n + '">' + pic('grid') + '已答 <b>' + answered + '</b></button></div>' +
+      question(q, { perm: permFor(x, id), chosen: x.ans[id], zh: false, mode: 'exam' }) + '</main>' +
       '<div class="dock"><div class="in"><button class="sq" data-a="exam-prev" aria-label="上一题"' + (x.i === 0 ? ' disabled' : '') + '>' + icon('back') + '</button>' +
       (last ? '<button class="btn" data-a="exam-submit">交卷</button>' : '<button class="btn" data-a="exam-next">下一题' + icon('next') + '</button>') + '</div></div>';
   }
+  // a stacked bar of theme-coloured blocks, each as wide as its share. parts: [[theme, n], …]
+  function themeMix(parts, label) {
+    return '<div class="mix" role="img" aria-label="' + esc(label) + '：' + parts.map(function (p) { return p[0].zh + ' ' + p[1] + ' 题'; }).join('、') + '">' + parts.map(function (p) {
+      return '<span class="t-' + p[0].id + '" style="flex-grow:' + p[1] + '">' + icon(p[0].id) + '<b>' + p[1] + '</b></span>';
+    }).join('') + '</div>';
+  }
   function examGrid() {
-    var x = S.exam;
-    var body = '<div class="grid40">' + x.ids.map(function (id, i) {
-      var cls = (x.ans[id] !== undefined ? 'done ' : '') + (i === x.i ? 'cur ' : '') + (x.flags[id] ? 'flag' : '');
-      return '<button class="' + cls + '" data-a="exam-go" data-v="' + i + '" aria-label="第 ' + (i + 1) + ' 题">' + (i + 1) + '</button>';
-    }).join('') + '</div><p class="small">绿色是已作答，黄点是标记过的题。</p>';
+    var x = S.exam, done = 0, flags = 0;
+    var cells = x.ids.map(function (id, i) {
+      var a = x.ans[id] !== undefined, f = !!x.flags[id];
+      if (a) done++;
+      if (f) flags++;
+      return '<button class="' + (a ? 'done ' : '') + (i === x.i ? 'cur ' : '') + (f ? 'flag' : '') + '" data-a="exam-go" data-v="' + i + '" aria-label="第 ' + (i + 1) + ' 题' + (a ? '，已答' : '，未答') + (f ? '，已标记' : '') + '">' + hex() + '<b>' + (i + 1) + '</b></button>';
+    }).join('');
+    var body = '<div class="grid40' + (x.ids.length <= 10 ? ' few' : '') + '">' + cells + '</div>' +
+      '<ul class="grid-key"><li class="done"><i></i>已答 <b>' + done + '</b></li><li><i></i>未答 <b>' + (x.ids.length - done) + '</b></li><li class="flag"><i></i>标记 <b>' + flags + '</b></li></ul>';
     ui.modal = { title: '题号', body: body, actions: [{ label: '交卷', a: 'exam-submit' }, { label: '继续答题', a: 'close', cls: 'quiet' }] };
   }
   // a row that opens to the question with its explanation. chosen === null: plain list (no right / wrong mark)
@@ -1072,23 +1107,31 @@
   function vResult() {
     var e = S.exams[ui.resultIdx] || S.exams[0];
     if (!e) return vExam();
-    var pass = e.score >= e.passAt, wrong = e.items.filter(function (it) { return it[1] !== 0; }).length;
-    var out = '<main class="wrap">' + topbar('成绩', 'exam') + '<section class="hero plain res-hero">' + six(pass ? 'celebrate' : 'console') +
-      '<div class="grow"><div class="big">' + e.score + '<small> / ' + e.n + '</small></div>' +
-      '<p class="verdict-line ' + (pass ? 'pass' : 'fail') + '">' + (pass ? '通过' : '未通过，还差 ' + (e.passAt - e.score) + ' 题') + '</p></div>' +
+    var pass = e.score >= e.passAt, wrong = e.items.filter(function (it) { return it[1] !== 0; }).length, secs = e.secs || 0;
+    var only = !!ui.resOnly && wrong > 0 && wrong < e.items.length;
+    // the moment: 小六 celebrates or consoles, the score, the pass mark
+    var out = '<main class="wrap">' + topbar('成绩', 'exam') + '<section class="hero res-hero ' + (pass ? 'pass' : 'plain fail') + '">' + (pass ? heroDeco() + confetti() : '') + six(pass ? 'celebrate' : 'console', 0, 'bob') +
+      '<p class="verdict-line ' + (pass ? 'pass' : 'fail') + '">' + (pass ? '通过！' : '还没过，差 <b>' + (e.passAt - e.score) + '</b> 题') + '</p>' +
+      '<div class="big" aria-label="答对 ' + e.score + ' / ' + e.n + ' 题">' + e.score + '<small> / ' + e.n + '</small></div>' +
       '<div class="scale' + (pass ? ' pass' : '') + '"><div class="track"><i style="width:' + (e.score / e.n * 100) + '%"></i></div>' +
       '<div class="passmark" style="left:' + (e.passAt / e.n * 100) + '%"><span>及格线 ' + e.passAt + '</span></div><div class="ends"><span>0</span><span>' + e.n + '</span></div></div>' +
-      '<span class="sub">' + (e.mini ? '试考' : '模拟考试') + ' · ' + LEVELS[e.target].zh + ' · ' + dateZh(e.ts) + ' · 用时 ' + Math.floor((e.secs || 0) / 60) + ' 分 ' + ((e.secs || 0) % 60) + ' 秒</span></section>';
-    out += '<section class="stack"><h2>各主题得分</h2><ul class="split">' + THEMES.filter(function (t) { return e.th[t.id]; }).map(function (t) {
+      '<span class="sub">' + (e.mini ? '试考' : '模考') + ' · ' + LEVELS[e.target].short + ' · ' + dateZh(e.ts) + ' · 用时 ' + mmss(secs) + '</span></section>';
+    out += '<section class="stack"><h2>各主题得分</h2><ul class="card res-th">' + THEMES.filter(function (t) { return e.th[t.id]; }).map(function (t) {
       var r = e.th[t.id];
-      return '<li><span>' + t.zh + '</span><span class="n' + (r[0] / r[1] < 0.8 ? ' lowv' : '') + '">' + r[0] + ' / ' + r[1] + '</span></li>';
-    }).join('') + '</ul></section>' + resultNext(e);
-    out += '<section class="stack"><h2>逐题讲解' + (wrong ? '（错 ' + wrong + ' 题）' : '') + '</h2><p class="small">点开任意一题看中文翻译和讲解。答错的题已自动加入错题本。</p><ul class="qlist">' + e.items.map(function (it, i) {
-      var q = DB.byId[it[0]];
-      if (!q) return '';
-      return reviewRow(q, i + 1, it[1], it[2].split('').map(Number), 'r' + i);
+      return '<li class="t-' + t.id + '">' + hexBadge(icon(t.id), 'solid') + '<span class="grow"><span class="t1">' + t.zh + '</span>' + bar(r[0], r[1]) + '</span>' +
+        '<span class="n' + (r[0] === r[1] ? ' full' : '') + '"><b>' + r[0] + '</b> / ' + r[1] + '</span></li>';
     }).join('') + '</ul></section>';
-    out += '<div class="stack"><a class="btn wide" href="#exam">再考一次</a>' + (wrong ? '<a class="btn wide ghost" href="#mistakes">去错题本</a>' : '') + '</div>';
+    var next = resultNext(e), canGo = next.indexOf('data-a="start"') >= 0;
+    out += next;
+    out += '<section class="stack res-rev"><div class="row between"><h2>逐题讲解</h2>' +
+      (wrong > 0 && wrong < e.items.length ? '<div class="chips" role="group" aria-label="显示哪些题"><button class="chip" data-a="res-filter" data-v="wrong" aria-pressed="' + only + '">只看错题 <b>' + wrong + '</b></button>' +
+        '<button class="chip" data-a="res-filter" data-v="all" aria-pressed="' + !only + '">全部</button></div>' : '') + '</div>' +
+      '<ul class="qlist res-list">' + e.items.map(function (it, i) {
+        var q = DB.byId[it[0]];
+        if (!q || (only && it[1] === 0)) return '';
+        return reviewRow(q, i + 1, it[1], it[2].split('').map(Number), 'r' + i);
+      }).join('') + '</ul>' + (wrong ? '<p class="small">错题已收进错题本。</p>' : '') + '</section>';
+    out += '<div class="stack"><a class="btn wide' + (canGo ? ' ghost' : '') + '" href="#exam">再考一次</a>' + (wrong ? '<a class="btn wide ghost" href="#mistakes">去错题本</a>' : '') + '</div>';
     if (!unlocked()) out += payBlock('解锁完整模拟考试');
     return out + '</main>' + tabs('exam');
   }
@@ -1096,13 +1139,14 @@
     if (!S.target) return vChoose();
     var ms = mistakes();
     var out = '<main class="wrap">' + topbar('错题本', 'practice', levelChip());
-    if (!ms.length) return out + '<div class="card empty">' + six('sleep', 96) + '<p>还没有错题。练习和模拟考试里答错的题会自动收进这里，连续答对两次后移出。</p></div><a class="btn wide" href="#practice">去练习</a></main>' + tabs('practice');
-    out += '<section class="stack"><p class="sub">共 <span class="num">' + ms.length + '</span> 题。每题连续答对两次后自动移出。</p>' +
-      '<button class="btn wide lg" data-a="start" data-v="all|wrong">重做错题 · 每组最多 ' + SET + ' 题</button></section>';
-    THEMES.forEach(function (t) {
-      var list = ms.filter(function (q) { return q.t === t.id; });
-      if (!list.length) return;
-      out += '<section class="stack"><h2>' + t.zh + '（' + list.length + '）</h2><ul class="qlist">' + list.map(function (q, i) {
+    if (!ms.length) return out + '<section class="card empty mis-empty">' + six('sleep', 104) + '<h2>还没有错题</h2><p>答错的题会自动收进来。</p></section><a class="btn wide" href="#practice">去练习</a></main>' + tabs('practice');
+    var groups = THEMES.map(function (t) { return [t, ms.filter(function (q) { return q.t === t.id; })]; }).filter(function (g) { return g[1].length; });
+    out += '<section class="hero plain mis-hero"><div class="mis-top">' + six('cheer', 0, 'bob') + '<div class="grow"><div class="big" aria-label="' + ms.length + ' 道错题">' + ms.length + '<small> 道错题</small></div>' +
+      '<p class="sub">连续答对两次，自动移出</p></div></div>' +
+      themeMix(groups.map(function (g) { return [g[0], g[1].length]; }), '各主题的错题数') +
+      '<button class="btn wide lg" data-a="start" data-v="all|wrong">' + icon('play') + '重做错题' + (ms.length > SET ? ' · 先做 ' + SET + ' 题' : '') + '</button></section>';
+    groups.forEach(function (g) {
+      out += '<section class="stack t-' + g[0].id + '"><h2 class="mis-h">' + hexBadge(icon(g[0].id), 'solid') + '<span class="grow">' + g[0].zh + '</span><b class="cnt">' + g[1].length + '</b></h2><ul class="qlist">' + g[1].map(function (q, i) {
         return reviewRow(q, i + 1, null, [0, 1, 2, 3], 'm' + q.id);
       }).join('') + '</ul></section>';
     });
@@ -1854,12 +1898,17 @@
     'exam-submit': function () {
       var x = S.exam; if (!x) return;
       var miss = x.ids.filter(function (id) { return x.ans[id] === undefined; }).length;
-      ui.modal = { title: '确定交卷？', body: '<p>' + (miss ? '还有 <b class="num">' + miss + '</b> 题没有作答，没答的题按答错计算。' : '全部题目都已作答。') + '剩余时间 <span class="num">' + mmss(examLeft()) + '</span>。</p>', actions: [{ label: '交卷', a: 'exam-submit-yes' }, { label: '继续答题', a: 'close', cls: 'quiet' }] };
+      ui.modal = {
+        title: '确定交卷？',
+        body: '<ul class="nums n3 ex-sum"><li><b>' + (x.ids.length - miss) + '</b><span>已答</span></li><li' + (miss ? ' class="miss"' : '') + '><b>' + miss + '</b><span>没答</span></li><li><b>' + mmss(examLeft()) + '</b><span>剩余时间</span></li></ul>' +
+          (miss ? '<p class="small center">没答的题按答错算。</p>' : ''),
+        actions: [{ label: '交卷', a: 'exam-submit-yes' }, { label: '继续答题', a: 'close', cls: 'quiet' }]
+      };
       render();
     },
     'exam-submit-yes': function () { finishExam(); ui.modal = null; go('result'); },
     'exam-quit': function () {
-      ui.modal = { title: '放弃这次考试？', body: '<p>这次的作答不会保存，也不计入成绩。</p>', actions: [{ label: '放弃考试', a: 'exam-quit-yes', cls: 'danger' }, { label: '继续答题', a: 'close' }] };
+      ui.modal = { title: '放弃这次考试？', body: '<p>这次作答不保存，也不计成绩。</p>', actions: [{ label: '放弃考试', a: 'exam-quit-yes', cls: 'danger' }, { label: '继续答题', a: 'close' }] };
       render();
     },
     'exam-quit-yes': function () { S.exam = null; ui.modal = null; save(); render(true); },
@@ -1881,7 +1930,8 @@
     },
     report: function (v) { reportSheet(v); render(); },
     'copy-id': function (v) { copyId(v); },
-    'result-show': function (v) { ui.resultIdx = Number(v); ui.open = {}; go('result'); },
+    'result-show': function (v) { ui.resultIdx = Number(v); ui.open = {}; ui.resOnly = false; go('result'); },
+    'res-filter': function (v) { ui.resOnly = v === 'wrong'; render(); },
     open: function (v) { ui.open[v] = !ui.open[v]; render(); },
     'plan-edit': function () { ui.planMsg = ''; planSheet(); render(); },
     'plan-clear': function () { S.examDate = ''; ui.modal = null; ui.planMsg = ''; save(); render(); },

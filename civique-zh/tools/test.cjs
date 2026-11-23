@@ -632,7 +632,7 @@ if (CODE) {
   await page.goto(base + '#result');
   await page.reload();
   await page.waitForSelector('.rd-next');
-  check('the result page names the weakest theme of the exam and offers to practise it', /权利与义务/.test(await page.locator('.rd-next p').innerText()) && (await page.locator('.rd-next p b').innerText()).trim() === String(Math.round(est)) && await page.locator('.rd-next [data-a="start"]').getAttribute('data-v') === 'droits|todo');
+  check('the result page names the weakest theme of the exam and offers to practise it', /权利与义务/.test(await page.locator('.rd-next .rd-th').innerText()) && (await page.locator('.rd-next .rd-est b').innerText()).trim() === String(Math.round(est)) && /估算，不是保证/.test(await page.locator('.rd-next .rd-est').innerText()) && await page.locator('.rd-next [data-a="start"]').getAttribute('data-v') === 'droits|todo');
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto(base + '#home');
   await page.waitForSelector('.themes');
@@ -1135,6 +1135,82 @@ if (CODE) {
   }
 
   // ==== checks for: welcome, mock exam, result, mistakes (add directly under this line) ====
+  console.log('welcome, mock exam, result, mistakes');
+  {
+    // welcome on the smallest phone: the example answers in place, 小六 reacts, the three picks can be tapped
+    ({ ctx, page } = await fresh({ viewport: { width: 320, height: 568 } }));
+    await page.goto(base);
+    await page.waitForSelector('.wl-try .opt');
+    const fold = await page.evaluate(() => { const top = document.querySelector('.tabs').getBoundingClientRect().top; return document.querySelector('.wl-hero h1').getBoundingClientRect().top >= 0 && document.querySelector('.wl-proof').getBoundingClientRect().bottom < top && document.querySelector('.wl-try .opt').getBoundingClientRect().bottom <= top && /非官方/.test(document.querySelector('.wl-hero').innerText); });
+    check('welcome at 320x568: headline with "非官方", the numbers and the first option of the example are above the fold', fold);
+    const stem = (await page.locator('.wl-try .stem').innerText()).trim(), dq = free.qs.find((x) => x.q === stem);
+    await page.locator('.wl-try .opt', { hasText: dq.o[0] }).click();
+    await page.waitForSelector('.wl-try .copy');
+    check('welcome: a right answer shows the explanation and 小六 cheering', (await page.locator('.wl-try .copy.good').innerText()).includes(dq.e) && await page.locator('.wl-react.good .six[data-mood="cheer"]').count() === 1 && await page.locator('[data-a="demo-next"]').count() === 1);
+    const picks = page.locator('.wl-next [data-a="target"]');
+    const reach = [];
+    for (let i = 0; i < await picks.count(); i++) {
+      reach.push(await picks.nth(i).evaluate((el) => { el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.left >= 0 && r.right <= innerWidth && r.height >= 56 && !!hit && el.contains(hit) && /\d+/.test(el.querySelector('.cnt b').textContent); }));
+    }
+    check('welcome at 320px: three pick cards, each with its number of official questions, nothing on top of them, no sideways scroll', reach.length === Object.keys(free.meta.counts).length && reach.every(Boolean) && await noOverflow(page), reach.join());
+    await picks.first().click();
+    await page.waitForSelector('.themes');
+
+    // mistakes: the empty state
+    await page.goto(base + '#mistakes');
+    await page.waitForSelector('.empty');
+    check('mistakes, empty: 小六 sleeps, a kind line, the way back to practice and no "redo" button', await page.locator('.empty .six[data-mood="sleep"]').count() === 1 && /还没有错题/.test(await page.locator('.empty').innerText()) && await page.locator('main a.btn[href="#practice"]').count() === 1 && await page.locator('[data-a="start"]').count() === 0);
+
+    // exam intro: the split of the real exam in the five theme colours
+    await page.goto(base + '#exam');
+    await page.waitForSelector('[data-a="exam-start"]');
+    const mix = await page.evaluate(() => [...document.querySelectorAll('.ex-mix .mix > span')].map((s) => [Number(s.querySelector('b').textContent), getComputedStyle(s).backgroundColor, Math.round(s.getBoundingClientRect().width)]));
+    const tiles = (await page.locator('.ex-hero .nums b').allInnerTexts()).map(Number);
+    check('exam intro: 40 / 45 / 32 as tiles, and the five themes share the 40 questions 11 / 6 / 11 / 8 / 4, each in its own colour, wider when it has more',
+      tiles.join() === '40,45,32' && mix.map((m) => m[0]).join() === '11,6,11,8,4' && mix.reduce((a, m) => a + m[0], 0) === tiles[0] && new Set(mix.map((m) => m[1])).size === 5 && mix[0][2] > mix[1][2] && mix[3][2] > mix[4][2] && mix[4][2] >= 24 && await noOverflow(page), JSON.stringify(mix));
+    check('exam intro, locked: the free trial says how many questions it has and that the full exam needs unlocking', /10 题/.test(await page.locator('[data-a="exam-start"][data-v="mini"]').innerText()) && /解锁后开放/.test(await page.locator('.ex-note').innerText()) && await page.locator('.pay').count() === 1);
+    await page.locator('[data-a="exam-start"]').click();
+    await page.waitForSelector('#timer');
+    const calm = await page.locator('main .six').count() === 0 && await page.locator('#timer.low').count() === 0 && await page.locator('[data-a="exam-flag"][aria-pressed="false"]').count() === 1 && await page.locator('.qbar [data-a="exam-quit"]').count() === 1;
+    await page.locator('[data-a="exam-flag"]').click();
+    await page.locator('[data-a="exam-grid"]').click();
+    const cells = await page.evaluate(() => [...document.querySelectorAll('.grid40 button')].map((b) => b.className.trim()));
+    await page.locator('.sheet [data-a="close"]').click();
+    await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('civique.v1')); s.exam.start = Date.now() - (s.exam.dur - 240) * 1000; localStorage.setItem('civique.v1', JSON.stringify(s)); });
+    await page.reload();
+    await page.waitForSelector('#timer.low');
+    await page.waitForTimeout(1300);
+    check('running exam: a timer, no mascot, a flag that shows in the number grid, and the timer turns warm (not red) under five minutes',
+      calm && cells.length === 10 && cells[0] === 'cur flag' && /^0[34]:\d\d$/.test(await page.locator('#timer.low').innerText()) && await page.evaluate(() => { const c = getComputedStyle(document.getElementById('timer')), w = getComputedStyle(document.documentElement).getPropertyValue('--warm-t').trim(); const p = document.createElement('i'); p.style.color = w; document.body.appendChild(p); const want = getComputedStyle(p).color; p.remove(); return c.color === want; }) && await noOverflow(page), cells.join('|'));
+    await page.locator('[data-a="exam-quit"]').click();
+    await page.locator('[data-a="exam-quit-yes"]').click();
+
+    // result: the same page celebrates a pass and consoles a fail
+    const ids = free.qs.filter((x) => x.l.includes('csp')).slice(0, 10).map((x) => x.id);
+    const seed = (score) => page.evaluate(([ids, score]) => {
+      const s = JSON.parse(localStorage.getItem('civique.v1'));
+      s.exams = [{ ts: Date.now(), target: 'csp', mini: true, score, n: 10, passAt: 8, secs: 125, th: { principes: [Math.min(3, score), 3], institutions: [score > 3 ? 2 : 0, 2], droits: [1, 2], histoire: [score > 5 ? 2 : 0, 2], societe: [0, 1] }, items: ids.map((id, i) => [id, i < score ? 0 : 2, '0123']) }];
+      localStorage.setItem('civique.v1', JSON.stringify(s));
+    }, [ids, score]);
+    await seed(9);
+    await page.goto(base + '#result');
+    await page.reload();
+    await page.waitForSelector('.res-hero');
+    const passOk = await page.locator('.res-hero.pass .six[data-mood="celebrate"]').count() === 1 && await page.locator('.res-hero .confetti').count() === 1 && /通过/.test(await page.locator('.verdict-line.pass').innerText()) && await page.locator('.res-th li').count() === 5;
+    await page.locator('[data-a="res-filter"][data-v="wrong"]').click();
+    const onlyWrong = await page.locator('.res-list .qrow').count() === 1 && await page.locator('.res-list .m.badm').count() === 1;
+    await page.locator('.res-list .qrow').first().click();
+    const opened = await page.locator('.res-list .detail .copy.miss').count() === 1;
+    await page.locator('[data-a="res-filter"][data-v="all"]').click();
+    check('result, passed: 小六 celebrates with confetti, five theme rows, and "只看错题" narrows the review to the wrong answers, which still open', passOk && onlyWrong && opened && await page.locator('.res-list .qrow').count() === 10 && await noOverflow(page));
+    await seed(5);
+    await page.reload();
+    await page.waitForSelector('.res-hero');
+    check('result, not passed: 小六 consoles, no confetti, the score and how many short, in the "not yet" colour rather than red',
+      await page.locator('.res-hero.fail .six[data-mood="console"]').count() === 1 && await page.locator('.res-hero .confetti').count() === 0 && (await page.locator('.big').innerText()).replace(/\s+/g, '') === '5/10' && /差\s*3\s*题/.test(await page.locator('.verdict-line.fail').innerText()) &&
+      await page.evaluate(() => { const fill = getComputedStyle(document.querySelector('.res-hero .scale .track i')).backgroundColor; const p = document.createElement('i'); p.style.background = 'var(--warm)'; document.body.appendChild(p); const want = getComputedStyle(p).backgroundColor; p.remove(); return fill === want; }) && await noOverflow(page));
+    await ctx.close();
+  }
 
   // (end of: welcome, mock exam, result, mistakes)
 

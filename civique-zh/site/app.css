@@ -930,3 +930,27 @@ button.rd:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--line); 
   .sheetpage .foot { font-size: 9.5px; line-height: 1.5; break-inside: avoid; }
   .sheetpage .foot a { color: inherit; }
 }
+
+/* ======================================================================================================
+   Screen-specific rules added after the foundation. One section per group of screens; add rules directly
+   under your own heading and nowhere else, so that parallel work merges cleanly.
+   ====================================================================================================== */
+
+/* ==== screens: welcome, mock exam, result, mistakes ==== */
+
+
+/* (end of: welcome, mock exam, result, mistakes) */
+
+/* ---------------------------------------------------------------------------------------------------- */
+
+/* ==== screens: study cards, words, cram sheet, recollections ==== */
+
+
+/* (end of: study cards, words, cram sheet, recollections) */
+
+/* ---------------------------------------------------------------------------------------------------- */
+
+/* ==== screens: registration, self-check, about, payment states ==== */
+
+
+/* (end of: registration, self-check, about, payment states) */

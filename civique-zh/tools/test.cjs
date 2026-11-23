@@ -1133,6 +1133,22 @@ if (CODE) {
     await ctx.close();
   }
 
+  // ==== checks for: welcome, mock exam, result, mistakes (add directly under this line) ====
+
+  // (end of: welcome, mock exam, result, mistakes)
+
+  // --------------------------------------------------------------------------------------------------
+
+  // ==== checks for: study cards, words, cram sheet, recollections (add directly under this line) ====
+
+  // (end of: study cards, words, cram sheet, recollections)
+
+  // --------------------------------------------------------------------------------------------------
+
+  // ==== checks for: registration, self-check, about, payment states (add directly under this line) ====
+
+  // (end of: registration, self-check, about, payment states)
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

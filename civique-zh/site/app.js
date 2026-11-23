@@ -1484,51 +1484,86 @@
     }
     return { list: list, q: q, dep: dep };
   }
+  // a few pictograms only these pages use, drawn like the ICON set
+  var RICON = {
+    search: '<circle cx="10.500" cy="10.500" r="6.500"/><path d="m15.500 15.500 5 5" stroke-width="3"/>',
+    locate: '<circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.600" fill="currentColor"/><path d="M12 2.500V6M12 18v3.500M2.500 12H6M18 12h3.500"/>',
+    tel: '<path d="M7 3.500h2.800l1.400 4.200-2 1.500a11 11 0 0 0 5.600 5.600l1.500-2 4.200 1.400V17a3 3 0 0 1-3.300 3A16.500 16.500 0 0 1 4 6.800a3 3 0 0 1 3-3.300z"/>',
+    web: '<circle cx="12" cy="12" r="8.700"/><path d="M3.500 12h17M12 3.300c2.500 2.400 3.700 5.300 3.700 8.700s-1.200 6.300-3.700 8.700c-2.500-2.400-3.700-5.300-3.700-8.700s1.200-6.300 3.700-8.700z"/>'
+  };
+  function rIcon(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + RICON[n] + '</svg>'; }
   function centreList() {
     if (ui.centresFail) return '<p class="note warn">考场名单没有加载出来。请检查网络后刷新，或直接到官方地图上查。</p>';
     if (!DB.centres) return '<p class="note">正在加载考场名单</p>';
     var f = findCentres();
     if (!f.q && !ui.geo) {
-      return '<div class="chips">' + ['巴黎', '里昂', '马赛', '图卢兹', '尼斯', '斯特拉斯堡', '波尔多', '里尔', '南特', '蒙彼利埃'].map(function (c) {
+      return '<p class="sub">热门城市</p><div class="chips">' + ['巴黎', '里昂', '马赛', '图卢兹', '尼斯', '斯特拉斯堡', '波尔多', '里尔', '南特', '蒙彼利埃'].map(function (c) {
         return '<button class="chip" data-a="cq" data-v="' + c + '">' + c + '</button>';
       }).join('') + '</div>';
     }
     if (!f.list.length) {
-      return '<p class="note">' + (f.dep ? esc(f.dep + (DEPTS[f.dep] ? ' ' + DEPTS[f.dep] : '')) + ' 省' : '“' + esc(ui.cq) + '”') + '在这份名单里没有考场。可以试试邻近的省号，或者点“用我的位置”找最近的；另一家机构的考场见下面。</p>';
+      return '<div class="note fd-none">' + six('sleep') + '<p>' + (f.dep ? esc(f.dep + (DEPTS[f.dep] ? ' ' + DEPTS[f.dep] : '')) + ' 省' : '“' + esc(ui.cq) + '”') + '在这份名单里没有考场。试试邻近的省号，或点“用我的位置”；另一家机构的考场见下面的说明。</p></div>';
     }
     var max = ui.cmore ? f.list.length : 8, shown = f.list.slice(0, max);
-    var head = (f.q ? '找到 ' + f.list.length + ' 个考场' : '离你最近的考场') + (ui.geo && f.q ? '，按距离排列' : '');
+    var head = (f.q ? '找到 <b class="num">' + f.list.length + '</b> 个考场' : '离你最近的考场') + (ui.geo && f.q ? '，按距离排列' : '');
     return '<p class="sub" id="ccount">' + head + '</p><ul class="centres">' + shown.map(function (x) {
       var c = x.c, addr = (c.street ? c.street + ', ' : '') + c.cp + ' ' + c.city;
-      return '<li class="centre"><div class="row between"><b class="cn" lang="fr">' + esc(c.name) + '</b>' + (x.km != null ? '<span class="tag blue">约 ' + (x.km < 10 ? Math.round(x.km * 10) / 10 : Math.round(x.km)) + ' 公里</span>' : '') + '</div>' +
-        '<p class="ca" lang="fr">' + esc(addr) + '</p><p class="cd">' + esc(c.dep) + (DEPTS[c.dep] ? ' <span lang="fr">' + esc(DEPTS[c.dep]) + '</span>' : '') + '</p><div class="clinks">' +
-        (c.tel ? '<a href="tel:' + esc(c.tel.split('/')[0].replace(/[^\d+]/g, '')) + '">' + esc(c.tel) + '</a>' : '') +
-        (c.web ? '<a href="' + esc(c.web) + '" target="_blank" rel="noopener">考场网站 ↗</a>' : '') +
-        '<a href="https://www.google.com/maps/search/?api=1&amp;query=' + encodeURIComponent(c.name + ', ' + addr) + '" target="_blank" rel="noopener">地图 ↗</a></div></li>';
+      return '<li class="centre"><div class="c-top"><p class="ca" lang="fr"><b class="cc"><span class="num">' + esc(c.cp) + '</span> ' + esc(c.city) + '</b></p>' +
+        (x.km != null ? '<span class="tag blue">约 ' + (x.km < 10 ? Math.round(x.km * 10) / 10 : Math.round(x.km)) + ' 公里</span>' : '') + '</div>' +
+        '<b class="cn" lang="fr">' + esc(c.name) + '</b>' +
+        '<p class="cd" lang="fr">' + (c.street ? esc(c.street) + ' · ' : '') + esc(c.dep) + (DEPTS[c.dep] ? ' ' + esc(DEPTS[c.dep]) : '') + '</p><div class="c-acts">' +
+        (c.tel ? '<a class="btn sm ghost" href="tel:' + esc(c.tel.split('/')[0].replace(/[^\d+]/g, '')) + '" title="' + esc(c.tel) + '" aria-label="电话 ' + esc(c.tel) + '">' + rIcon('tel') + '电话</a>' : '') +
+        (c.web ? '<a class="btn sm ghost" href="' + esc(c.web) + '" target="_blank" rel="noopener">' + rIcon('web') + '网站</a>' : '') +
+        '<a class="btn sm ghost" href="https://www.google.com/maps/search/?api=1&amp;query=' + encodeURIComponent(c.name + ', ' + addr) + '" target="_blank" rel="noopener">' + icon('register') + '地图</a></div></li>';
     }).join('') + '</ul>' + (f.list.length > max ? '<button class="btn quiet wide" data-a="cmore">显示其余 ' + (f.list.length - max) + ' 个</button>' : '');
+  }
+  // the seven steps: a title of a few words, two short lines at most, the action, the rest behind "了解更多"
+  function regSteps(lv, cci) {
+    function ext(href, t1, t2) { return '<a class="lrow" href="' + href + '" target="_blank" rel="noopener"><span class="grow"><span class="t1" lang="fr">' + t1 + '</span><span class="t2">' + t2 + '</span></span><span class="go out" aria-hidden="true">↗</span></a>'; }
+    return [
+      { t: '确认考哪种', p: ['分三种：多年卡、十年卡、入籍。' + (lv ? '你选的是「<b>' + LEVELS[lv].zh + '</b>」。' : ''), '选错了，证明可能用不上。'],
+        act: '<a class="btn sm ghost" href="#check">不确定？30 秒自测</a>',
+        more: '<p>报名时要选对考试类型，选错了，证明可能不能用于你的申请。十年居留卡的通过证明，申请多年居留卡时同样有效。</p>' },
+      { t: '备好材料', p: ['有效居留证、外国人号码、一个常用邮箱。'],
+        more: '<p>外国人号码（<span lang="fr">numéro étranger / AGDREF</span>）印在居留证上。账号、通知和成绩都发到邮箱，记得看垃圾邮件箱。</p>' },
+      { t: '选考场报名', p: ['两家官方机构任选一家，考试内容相同。', '费用由各考场自己定，报名前先问清楚。'],
+        act: '<div class="list">' + ext('https://test-civique.fr/inscription', 'France Éducation International', '填官方预报名表') + ext(cci, 'CCI Paris Île-de-France', '巴黎工商会：查场次并报名') + '</div>' +
+          '<button class="btn sm ghost" data-a="cfind">' + rIcon('search') + '在下面找考场</button>',
+        more: '<p><span lang="fr">France Éducation International</span>：官方建议先联系想去的考场，确认场次和费用，再填预报名表；提交后会收到一封邮件，用来创建考生账号。</p><p>巴黎工商会：在它的网站上按城市查场次，直接在线报名。</p>' },
+      { t: '考试当天', p: ['带居留证和准考通知（<span lang="fr">convocation</span>），按通知上的时间到。', '迟到不能进考场。'],
+        more: '<p>现场会核对身份、拍照、签名，请当场确认姓名和出生日期没有写错，这些会印在证明上。手机要关机，不能带资料和草稿纸，中途不能离场。</p>' },
+      { t: '查成绩', p: ['考后一到两天出成绩。', '证明是电子版，长期有效，下载后保存好。'],
+        more: '<p>一家是 12 小时内在考生账号里查看，另一家是 24 到 48 个工作小时内发邮件。没有纸质证明。</p>' },
+      { t: '没通过', p: ['可以再报名，次数不限。', '答对 ' + EXAM.pass + ' 题才通过，模考稳定在 35 题以上再去。'],
+        act: '<a class="btn sm ghost" href="#exam">去模考一次</a>' },
+      { t: '交证明', p: ['办居留卡或入籍时，和其他材料一起交。'] }
+    ];
   }
   function vRegister() {
     loadCentres();
     var lv = LEVELS[S.target] ? S.target : '', cci = 'https://francais.cci-paris-idf.fr/candidat?produit=' + (CCI_PRODUCT[lv] || 21);
-    var out = '<main class="wrap">' + topbar('报名考试', 'me') + '<section class="stack">' +
-      '<p class="sub">从报名到拿到通过证明的每一步。本站只帮你找到入口：报名和交费都在官方机构的网站上完成，本站不代办、不收报名费。</p>' +
-      '<ol class="steps">' +
-      '<li><b>确认要不要考、考哪一种</b><p><a class="link" href="#check">不确定？30 秒自测</a></p><p>考试分三种：多年居留卡、十年居留卡、入籍。报名时要选对' + (lv ? '，你在首页选的是「' + LEVELS[lv].zh + '」' : '') + '。选错了，证明可能不能用于你的申请。</p></li>' +
-      '<li><b>准备好这几样</b><p>有效的居留证；居留证上的外国人号码（<span lang="fr">numéro étranger / AGDREF</span>）；一个常用邮箱（账号、通知和成绩都发到这里，记得看垃圾邮件箱）。</p></li>' +
-      '<li><b>选考场，在官网报名</b><p>全法有两家官方指定的考试机构，任选一家，考试内容相同。费用由各考场自己定，每个考场不一样，报名前先问清楚。</p>' +
-      '<ul class="facts"><li><span lang="fr">France Éducation International</span>：官方建议先联系想去的考场，确认场次和费用，再填预报名表；提交后会收到一封邮件，用来创建考生账号。<br><a class="link" href="https://test-civique.fr/inscription" target="_blank" rel="noopener">去填官方预报名表 ↗</a></li>' +
-      '<li>巴黎工商会（<span lang="fr">CCI Paris Île-de-France</span>）：在它的网站上按城市查场次，直接在线报名。<br><a class="link" href="' + cci + '" target="_blank" rel="noopener">去查场次并报名 ↗</a></li></ul></li>' +
-      '<li><b>考试当天</b><p>按准考通知（<span lang="fr">convocation</span>）上的时间到场，带上居留证和准考通知。迟到不能进考场。现场会核对身份、拍照、签名，请当场确认姓名和出生日期没有写错，这些会印在证明上。手机要关机，不能带资料和草稿纸，中途不能离场。</p></li>' +
-      '<li><b>查成绩，下载证明</b><p>成绩在考后一到两天内出来（一家是 12 小时内在考生账号里查看，另一家是 24 到 48 个工作小时内发邮件）。证明是电子版，没有纸质的，长期有效，下载后自己保存好。</p></li>' +
-      '<li><b>没通过怎么办</b><p>可以再报名，次数不限。答对 32 题才算通过，建议模拟考试稳定在 35 题以上再去。</p><a class="link" href="#exam">去做一次模拟考试</a></li>' +
-      '<li><b>提交证明</b><p>办理居留卡或入籍时，把这份通过证明和其他材料一起提交。</p></li></ol></section>';
-    out += '<section class="stack"><h2>找考场</h2>' +
-      '<p class="sub"><span lang="fr">France Éducation International</span> 认可的考场' + (DB.centres ? '，法国境内共 <span class="num">' + DB.centres.length + '</span> 个' : '') + '。</p>' +
-      '<form id="cform" class="field"><input id="cq" class="plain" name="cq" type="search" autocomplete="off" spellcheck="false" placeholder="城市、省号或邮编，如 里昂 / 69" aria-label="城市、省号或邮编" maxlength="40" value="' + esc(ui.cq || '') + '"></form>' +
-      '<button class="btn ghost wide" data-a="geo"' + (ui.geoBusy ? ' disabled' : '') + '>' + (ui.geoBusy ? '正在定位' : ui.geo ? '已按你的位置排序 · 重新定位' : '用我的位置找最近的') + '</button>' +
+    var steps = regSteps(lv, cci), open = steps[ui.step] ? ui.step : 0;
+    var out = '<main class="wrap reg">' + topbar('报名考试', 'me', '<button class="chip" data-a="cfind">' + rIcon('search') + '找考场</button>') +
+      '<p class="reg-own">' + icon('tick') + '<span>报名交费只在官网，本站不代办、不收报名费。</span></p>' +
+      '<ol class="steps">' + steps.map(function (s, i) {
+        var on = i === open;
+        return '<li' + (on ? ' class="on"' : '') + '><button class="step-h" data-a="step" data-v="' + i + '" aria-expanded="' + on + '"><b>' + s.t + '</b>' + icon('go', 'chev') + '</button>' +
+          (on ? '<div class="step-b">' + s.p.map(function (p) { return '<p>' + p + '</p>'; }).join('') + (s.act || '') +
+            (s.more ? '<details class="disc flat"><summary>了解更多</summary><div class="in">' + s.more + '</div></details>' : '') +
+            (steps[i + 1] ? '<button class="link step-n" data-a="step" data-v="' + (i + 1) + '">下一步：' + steps[i + 1].t + ' ›</button>' : '') + '</div>' : '') + '</li>';
+      }).join('') + '</ol>';
+    out += '<section class="hero finder" id="finder">' + heroDeco() +
+      '<div class="fd-head"><div class="grow"><h2>找考场' + (DB.centres ? '<span class="fd-n"><b class="num">' + DB.centres.length + '</b> 个</span>' : '') + '</h2><p class="sub"><span lang="fr">France Éducation International</span> 认可</p></div>' + six('cheer', 0, 'bob') + '</div>' +
+      '<form id="cform" class="field fd-q">' + rIcon('search') + '<input id="cq" class="plain" name="cq" type="search" autocomplete="off" spellcheck="false" placeholder="城市、省号或邮编，如 69" aria-label="城市、省号或邮编" maxlength="40" value="' + esc(ui.cq || '') + '"></form>' +
+      '<button class="btn white wide" data-a="geo"' + (ui.geoBusy ? ' disabled' : '') + '>' + rIcon('locate') + (ui.geoBusy ? '正在定位' : ui.geo ? '重新定位' : '用我的位置') + '</button></section>' +
       (ui.geoMsg ? '<p class="msg bad" role="status">' + esc(ui.geoMsg) + '</p>' : '') +
       '<div id="clist" class="stack">' + centreList() + '</div>' +
-      '<p class="small">位置只在你的手机上用来计算距离，不会上传。距离是直线距离。名单取自 France Éducation International 官网' + (DB.centresAsOf ? '（' + DB.centresAsOf + '）' : '') + '，考场会增减，以<a href="https://www.france-education-international.fr/centres-d-examen/carte?type-centre=examen_civique" target="_blank" rel="noopener">官方地图 ↗</a>为准。巴黎工商会的考场不在这份名单里，请在<a href="' + cci + '" target="_blank" rel="noopener">它的网站 ↗</a>上按城市查。</p></section>';
+      '<details class="disc fd-notes"><summary>名单来源和注意事项</summary><div class="in"><ul class="facts">' +
+      '<li>名单取自 <span lang="fr">France Éducation International</span> 官网' + (DB.centresAsOf ? '（' + esc(DB.centresAsOf) + '）' : '') + '，考场会增减，以<a href="https://www.france-education-international.fr/centres-d-examen/carte?type-centre=examen_civique" target="_blank" rel="noopener">官方地图 ↗</a>为准。</li>' +
+      '<li>巴黎工商会的考场不在这份名单里，请在<a href="' + cci + '" target="_blank" rel="noopener">它的网站 ↗</a>上按城市查。</li>' +
+      '<li>位置只在你的手机上用来计算距离，不会上传。距离是直线距离。</li>' +
+      '<li>费用由各考场自己定，每个考场不一样。</li>' +
+      '<li>报名和交费都在官方机构的网站上完成，本站不代办、不收报名费。</li></ul></div></details>';
     return out + disclaimer() + '</main>' + tabs('me');
   }
   // ---------------------------------------------------------------- "do I have to take it?" (free self-check)
@@ -1602,60 +1637,87 @@
     }
     return { said: said, node: node, res: res };
   }
+  // the longest way from a question to a verdict, counted in questions: how many progress dots are still to come
+  function chkDepth(node) {
+    var d = 0;
+    node.o.forEach(function (o) { if (o.n && CHK[o.n]) d = Math.max(d, chkDepth(CHK[o.n])); });
+    return d + 1;
+  }
+  var CHK_LEGAL = '<div class="chk-legal"><p class="small">初步判断，不是法律意见，不能代替省政府（<span lang="fr">préfecture</span>）的要求。不适用于欧盟、欧洲经济区和瑞士公民，也不适用于持阿尔及利亚居留证的人。</p>' +
+    '<details class="disc flat"><summary>依据和查阅日期</summary><div class="in"><p class="small">根据官方公开页面整理。规定可能调整，办理前请以官方页面和 ANEF 上给你的材料清单为准。欧盟、欧洲经济区和瑞士公民，以及持阿尔及利亚居留证（<span lang="fr">certificat de résidence</span>）的人另有规定。官方页面查阅于 2026-11-23。</p></div></details></div>';
   function vCheck() {
-    var w = chkWalk(), out = '<main class="wrap">' + topbar('我要不要考？', 'me') + '<section class="stack">' +
-      '<p class="sub">回答两三个问题，告诉你要不要考、考哪一种。根据法国政府 service-public 网站的规定整理，免费，不用注册。</p></section>';
-    if (w.said.length) out += '<ol class="chk-said">' + w.said.map(function (s) {
-      return '<li><span class="q">' + esc(s.q) + '</span><span class="a">' + esc(s.t) + '</span><button class="link" data-a="chk-back" data-v="' + s.at + '">改</button></li>';
+    var w = chkWalk(), done = w.said.length, total = done + (w.node ? chkDepth(w.node) : 0), dots = '';
+    for (var i = 0; i < total; i++) dots += '<i' + (i < done ? ' class="done"' : i === done ? ' class="now"' : '') + '></i>';
+    var out = '<main class="wrap chk">' + topbar('我要不要考？', 'me');
+    if (!done) out += '<div class="chk-hi">' + six('cheer', 0, 'bob') + '<div class="stack tight"><p class="say"><span>答两三题，就知道要不要考、考哪种。</span></p>' +
+      '<p class="chk-tags"><span class="tag g">免费</span><span class="tag g">不用注册</span><span class="tag">依据 service-public 官网</span></p></div></div>';
+    out += '<div class="chk-prog" role="img" aria-label="' + (w.node ? '第 ' + (done + 1) + ' 题，最多 ' + total + ' 题' : '已答完') + '">' + dots +
+      '<span class="lab">' + (w.node ? '第 <b>' + (done + 1) + '</b> 题' : '结果') + '</span></div>';
+    if (done) out += '<ol class="chk-said">' + w.said.map(function (s) {
+      return '<li><button class="chip" data-a="chk-back" data-v="' + s.at + '" aria-label="修改：' + esc(s.q) + ' ' + esc(s.t) + '"><span class="a">' + esc(s.t) + '</span><span class="ed">改</span></button></li>';
     }).join('') + '</ol>';
     if (w.node) {
-      out += '<section class="stack chk-q"><h3>' + esc(w.node.q) + '</h3>' + (w.node.sub ? '<p class="small">' + esc(w.node.sub) + '</p>' : '') +
+      out += '<section class="stack chk-q"><h2>' + esc(w.node.q) + '</h2>' + (w.node.sub ? '<p class="small">' + esc(w.node.sub) + '</p>' : '') +
         w.node.o.map(function (o, i) {
-          return '<button class="pick chk-opt" data-a="chk-pick" data-v="' + i + '"><span class="grow"><span class="t1">' + esc(o.t) + '</span>' + (o.fr ? '<br><span class="t2" lang="fr">' + esc(o.fr) + '</span>' : '') + '</span><span class="go" aria-hidden="true">›</span></button>';
+          return '<button class="pick chk-opt" data-a="chk-pick" data-v="' + i + '">' + hexBadge('<b>' + 'ABCDEFGHIJ'.charAt(i) + '</b>') + '<span class="grow"><span class="t1">' + esc(o.t) + '</span>' + (o.fr ? '<span class="t2" lang="fr">' + esc(o.fr) + '</span>' : '') + '</span><span class="go" aria-hidden="true">›</span></button>';
         }).join('') + '</section>';
     } else if (w.res) {
-      var r = w.res, lv = r.lv && DB.free.meta.counts[r.lv] ? r.lv : '';
-      out += '<section class="chk-res ' + r.v + '" role="status"><span class="chk-stamp">' + (r.v === 'yes' ? '要考' : r.v === 'no' ? '不用考' : '待确认') + '</span><h3>' + esc(r.h) + '</h3>' +
-        r.why.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') + '</section>';
+      var r = w.res, lv = r.lv && DB.free.meta.counts[r.lv] ? r.lv : '', h = esc(r.h), stamp = r.v === 'yes' ? '要考' : r.v === 'no' ? '不用考' : '待确认';
+      if (r.lv && LEVELS[r.lv]) h = h.replace(esc(LEVELS[r.lv].zh), '<mark>' + esc(LEVELS[r.lv].zh) + '</mark>');
+      out += '<section class="chk-res ' + r.v + '" role="status"><div class="chk-v">' + (r.v === 'no' ? confetti() : '') + hex('deco') +
+        six(r.v === 'yes' ? 'cheer' : r.v === 'no' ? 'celebrate' : 'neutral', 0, 'bob') +
+        '<div class="grow">' + (r.h === stamp ? '' : '<span class="chk-stamp">' + stamp + '</span>') + '<h2' + (r.h === stamp ? ' class="solo"' : '') + '>' + h + '</h2></div></div>' +
+        '<ul class="facts">' + r.why.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul></section>';
       out += '<div class="stack">' +
         (lv ? '<button class="btn wide" data-a="chk-go" data-v="' + lv + '">开始练「' + LEVELS[lv].zh + '」的题</button><a class="btn ghost wide" href="#register">怎么报名、去哪考</a>'
           : (r.v === 'maybe' ? '<a class="btn ghost wide" href="#home">先练着，不耽误</a>' : '')) +
         '<button class="btn quiet wide" data-a="chk-back" data-v="0">重新回答</button></div>';
-      out += '<section class="stack"><h2>官方出处</h2><ul class="facts">' + r.src.map(function (k) {
-        return '<li><a href="' + CHK_SRC[k][1] + '" target="_blank" rel="noopener">' + esc(CHK_SRC[k][0]) + ' ↗</a></li>';
-      }).join('') + '</ul></section>';
+      out += '<section class="stack chk-src"><h2>官方出处</h2><div class="list">' + r.src.map(function (k) {
+        var s = CHK_SRC[k][0].split('：');
+        return '<a class="lrow" href="' + CHK_SRC[k][1] + '" target="_blank" rel="noopener"><span class="grow"><span class="t1">' + esc(s[1] || s[0]) + '</span><span class="t2">' + esc(s[1] ? s[0] : '') + '</span></span><span class="go out" aria-hidden="true">↗</span></a>';
+      }).join('') + '</div></section>';
     }
-    out += '<p class="small">这是根据官方公开页面整理的初步判断，不是法律意见，也不能代替省政府（préfecture）的要求。规定可能调整，办理前请以官方页面和 ANEF 上给你的材料清单为准。本页的判断不适用于欧盟、欧洲经济区和瑞士公民，也不适用于持阿尔及利亚居留证（certificat de résidence）的人，他们另有规定。官方页面查阅于 2026-11-23。</p>';
-    return out + disclaimer() + '</main>' + tabs('me');
+    return out + CHK_LEGAL + disclaimer() + '</main>' + tabs('me');
   }
+  // about, as questions people ask: short answers in cards that open, the official links as rows
   function vAbout() {
-    var out = '<main class="wrap">' + topbar('说明', 'me') + '<section class="stack"><h2>关于公民考试</h2><ul class="facts">' +
-      '<li>从 2026 年 1 月 1 日起，第一次申请多年居留卡（<span lang="fr">carte de séjour pluriannuelle</span>）或十年居留卡（<span lang="fr">carte de résident</span>）要提交公民考试（<span lang="fr">examen civique</span>）的通过证明。续签不需要。</li>' +
-      '<li>考试是 40 道法语单选题，每题 4 个选项，只有 1 个正确。其中 28 题是知识题，12 题是情景题。</li>' +
-      '<li>在平板或电脑上作答，最长 45 分钟。答对 32 题（80%）通过。</li>' +
-      '<li>可以随时报名，没通过可以再考，次数不限。通过证明长期有效。</li>' +
-      '<li>十年居留卡的通过证明，申请多年居留卡时同样有效。</li>' +
-      '<li>申请入籍（<span lang="fr">naturalisation par décret</span>）也要通过公民考试，形式相同（40 题、45 分钟、32 题及格），题目清单另有一套。通过结婚等方式以声明取得国籍的不用考。</li>' +
-      '<li>65 岁以上的人不用考。因残疾或健康原因确实无法参加的，可以凭医生证明申请调整考试方式或免考。</li>' +
-      '<li>不是所有类别的居留卡都要求考试，例如不需要签署融入合同（<span lang="fr">CIR</span>）的类别就不用。自己属于哪种情况，请看下面 service-public 的页面。</li>' +
-      '<li>考试中作弊会被禁考两年。</li></ul>' +
-      '<p class="small">以上内容整理自法国内政部和 service-public.gouv.fr 的官方页面，规定可能调整，办理前请以官方页面为准。</p></section>';
-    out += '<section class="stack"><h2>官方入口</h2><ul class="facts">' +
-      '<li><a href="https://formation-civique.interieur.gouv.fr/examen-civique/" target="_blank" rel="noopener">内政部：考试说明、官方题目清单和讲义（免费）↗</a></li>' +
-      '<li><a href="https://www.service-public.gouv.fr/particuliers/vosdroits/F39530" target="_blank" rel="noopener">service-public：居留卡谁需要考、怎么报名 ↗</a></li>' +
-      '<li><a href="https://www.service-public.gouv.fr/particuliers/vosdroits/F39426" target="_blank" rel="noopener">service-public：入籍的公民考试 ↗</a></li>' +
-      '<li><a href="#check">我要不要考、考哪一种：30 秒自测（本站整理）</a></li>' +
-      '<li><a href="#register">报名流程和考场查询（本站整理）</a></li>' +
-      '<li><a href="https://francais.cci-paris-idf.fr/candidat?produit=21" target="_blank" rel="noopener">考试机构一：巴黎工商会（CCI Paris Île-de-France）↗</a></li>' +
-      '<li><a href="https://test-civique.fr/inscription" target="_blank" rel="noopener">考试机构二：France Éducation International 报名 ↗</a></li></ul>' +
-      '<p class="small">报名、考点和费用以两家考试机构的网站为准。</p></section>';
-    out += '<section class="stack"><h2>这个题库是什么</h2><ul class="facts">' +
-      '<li>知识题的题干是内政部公布的官方题目。官方没有公布选项，本站的选项、中文翻译和讲解是自己编写的，并对照官方讲义核对。</li>' +
-      '<li>情景题官方没有公布，本站的情景题是按官方讲义编写的练习题，用来熟悉题型。</li>' +
-      '<li>正式考试的选项措辞会和这里不同。把知识点弄懂，比背选项有用。</li>' +
-      '<li>发现错误请告诉我们' + (CFG.contact ? '：' + esc(CFG.contact) : '') + '，核实后会更正。</li>' +
-      '<li>练习记录只保存在你这台设备上，本站不要求注册，不收集个人信息。</li></ul>' +
-      bankLine() + (CFG.seller ? '<p class="small">经营者：' + esc(CFG.seller) + '</p>' : '') + '</section>';
+    var lv = LEVELS[S.target] ? S.target : '', n = 0;
+    function faq(ic, q, body, open) {
+      return '<details class="disc faq-c" id="faq-' + (++n) + '"' + (open ? ' open' : '') + '><summary>' + hexBadge(icon(ic)) + '<span class="grow">' + q + '</span></summary><div class="in">' + body + '</div></details>';
+    }
+    function ext(href, t1, t2) { return '<a class="lrow" href="' + href + '" target="_blank" rel="noopener"><span class="grow"><span class="t1">' + t1 + '</span><span class="t2">' + t2 + '</span></span><span class="go out" aria-hidden="true">↗</span></a>'; }
+    function own(href, ic, t1, t2) { return '<a class="lrow" href="' + href + '">' + hexBadge(icon(ic)) + '<span class="grow"><span class="t1">' + t1 + '</span><span class="t2">' + t2 + '</span></span><span class="go">' + icon('go') + '</span></a>'; }
+    var out = '<main class="wrap about">' + topbar('说明', 'me') + '<section class="stack faq">' +
+      faq('exam', '考试是什么？',
+        '<ul class="nums n3"><li><b>' + EXAM.n + '</b><span>道单选题</span></li><li><b>' + EXAM.min + '</b><span>分钟</span></li><li class="pass"><b>' + EXAM.pass + '</b><span>题及格</span></li></ul>' +
+        '<ul class="facts"><li>法语作答，每题 4 个选项，只有 1 个正确：28 题知识题，12 题情景题。在平板或电脑上考。</li>' +
+        '<li>随时可以报名，没通过可以再考，次数不限。通过证明长期有效。</li>' +
+        '<li>考试中作弊会被禁考两年。</li></ul>', true) +
+      faq('check', '谁要考？',
+        '<ul class="facts"><li>从 2026 年 1 月 1 日起，第一次申请多年居留卡（<span lang="fr">carte de séjour pluriannuelle</span>）或十年居留卡（<span lang="fr">carte de résident</span>）要交通过证明。续签不需要。</li>' +
+        '<li>申请入籍（<span lang="fr">naturalisation par décret</span>）也要考，形式相同，题目清单另有一套。以声明取得国籍的不用考。</li>' +
+        '<li>65 岁以上不用考。因残疾或健康原因确实无法参加的，可以凭医生证明申请调整考试方式或免考。</li>' +
+        '<li>不是所有居留类别都要考，例如不用签融入合同（<span lang="fr">CIR</span>）的类别就不用。</li>' +
+        '<li>十年居留卡的通过证明，申请多年居留卡时同样有效。</li></ul>' +
+        '<a class="btn sm ghost" href="#check">我属于哪种？30 秒自测</a>' +
+        '<p class="small">整理自内政部和 service-public.gouv.fr 的官方页面，规定可能调整，办理前请以官方页面为准。</p>') +
+      faq('cards', '这个题库是什么？',
+        '<ul class="faq-own"><li><span class="tag g">官方</span><p>知识题的题干是内政部公布的官方题目。</p></li>' +
+        '<li><span class="tag hot">本站</span><p>官方没有公布选项，本站的选项、中文翻译和讲解是自己编写的，并对照官方讲义核对。</p></li>' +
+        '<li><span class="tag hot">本站</span><p>情景题官方没有公布，本站的情景题是按官方讲义编写的练习题，用来熟悉题型。</p></li>' +
+        '<li><span class="tag warm">注意</span><p>正式考试的选项措辞会和这里不同。把知识点弄懂，比背选项有用。</p></li></ul>') +
+      faq('lock', '我的记录存在哪？', '<p>练习记录只保存在你这台设备上。本站不要求注册，不收集个人信息。</p>') +
+      faq('mistakes', '发现题目有错？', '<p>每道题的讲解下面有“这道题有问题？”，点一下就能把题号告诉我们' + (CFG.contact ? '：' + esc(CFG.contact) : '') + '，核实后会更正。</p>') +
+      '</section>';
+    out += '<section class="stack"><h2>官方入口</h2><div class="list">' +
+      ext('https://formation-civique.interieur.gouv.fr/examen-civique/', '考试说明、官方题目清单和讲义', '内政部 · 免费') +
+      ext('https://www.service-public.gouv.fr/particuliers/vosdroits/F39530', '居留卡：谁要考、怎么报名', 'service-public') +
+      ext('https://www.service-public.gouv.fr/particuliers/vosdroits/F39426', '入籍的公民考试', 'service-public') +
+      ext('https://francais.cci-paris-idf.fr/candidat?produit=' + (CCI_PRODUCT[lv] || 21), '报名：巴黎工商会', '考试机构 · CCI Paris Île-de-France') +
+      ext('https://test-civique.fr/inscription', '报名：France Éducation International', '考试机构') +
+      '</div><p class="small">报名、考点和费用以两家考试机构的网站为准。</p>' +
+      '<div class="list">' + own('#check', 'check', '我要不要考？', '30 秒自测 · 本站整理') + own('#register', 'register', '报名步骤和考场查询', '本站整理') + '</div></section>';
+    out += bankLine() + (CFG.seller ? '<p class="small center">经营者：' + esc(CFG.seller) + '</p>' : '');
     return out + (DB.free ? disclaimer() : '') + '</main>' + tabs('me');
   }
   // what is open for free and what the unlock adds, counted from the data (for the chosen exam when there is one)
@@ -1678,6 +1740,19 @@
     var list = (DB.free.qs || []).filter(function (q) { return q.k === 'c' && q.e && q.qz && q.v && q.v.length && (!lv || q.l.indexOf(lv) >= 0); });
     return list[0] || null;
   }
+  // back from the payment page and not unlocked yet: being confirmed, waiting to be confirmed again, or not confirmed
+  function payState(at, note) {
+    var wait = !!S.pending, busy = wait && ui.busy, c = String(CFG.contact || '').trim();
+    return '<section class="card pay-state ' + (busy ? 'busy' : wait ? 'wait' : 'fail') + '">' +
+      '<div class="ps-head">' + six(busy ? 'cheer' : wait ? 'neutral' : 'console', 0, busy ? 'bob' : '') +
+      '<div class="grow"><h2>' + (busy ? '正在确认你的付款' : wait ? '付款还没确认好' : '付款没有确认') + '</h2>' +
+      (busy ? '<p class="sub">一般几秒钟，不用再付一次。</p>' : wait && at !== 'pay' ? '<p class="sub">点一下再确认，不用再付一次。</p>' : '') + '</div></div>' +
+      (busy ? '<div class="bar ps-bar" role="progressbar" aria-label="正在确认"><i></i></div>' : '') + note +
+      (wait ? '<button class="btn wide" data-a="pay-retry"' + (busy ? ' disabled' : '') + '>' + (busy ? '确认中' : '重新确认') + '</button>'
+        : (CFG.api ? '<button class="btn ghost wide" data-a="pay-find">已经付过款？找回解锁码</button>' : '') +
+          (CFG.payUrl ? '<p class="small">想重新付款，用下面的按钮。</p>' : '')) +
+      (c ? '<p class="small ps-help">还是不行？联系 ' + esc(c) + '</p>' : '') + '</section>';
+  }
   function vUnlock() {
     ping('paywall');
     var close = '<button class="sq" data-a="back" aria-label="关闭">' + icon('close') + '</button>';
@@ -1696,8 +1771,7 @@
     function row(name, free, paid) { return '<tr><th scope="row">' + name + '</th><td>' + free + '</td><td class="on">' + paid + '</td></tr>'; }
     function get(cls, n, unit, what) { return '<li class="tile ' + cls + '">' + hex('deco') + '<div class="n"><b>' + n + '</b><span>' + unit + '</span></div><p>' + what + '</p></li>'; }
     var out = '<main class="wrap"><section class="hero u-hero">' + heroDeco() + close + stage + '<h1 class="offer-h">解锁全部，一路通关</h1></section>';
-    if (S.pending || at === 'pay') out += '<section class="card stack"><h2>' + (S.pending ? '正在确认你的付款' : '付款没有确认') + '</h2>' + msg('pay') +
-      (S.pending ? '<button class="btn wide" data-a="pay-retry"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '确认中' : '重新确认') + '</button>' : '') + '</section>';
+    if (S.pending || at === 'pay') out += payState(at, msg('pay'));
 
     // 1. what you get, the price, one button
     out += '<ul class="gets">' + get('t-institutions', DB.free.meta.total, '题', '全部带中文讲解') +
@@ -1863,6 +1937,11 @@
       render();
     },
     'exam-quit-yes': function () { S.exam = null; ui.modal = null; save(); render(true); },
+    'pay-find': function () {
+      ui.open.mail = true; render();
+      var box = document.getElementById('find-code');
+      if (box && box.scrollIntoView) { try { box.scrollIntoView({ block: 'center' }); } catch (e) { box.scrollIntoView(false); } }
+    },
     'pay-retry': function () {
       if (!S.pending || ui.busy) return;
       ui.busy = true; ui.msg = null; render();
@@ -1891,6 +1970,12 @@
     reset: function () {
       ui.modal = { title: '清空全部练习记录？', body: '<p>练习进度、错题本和模拟考试成绩都会被清空。解锁状态不受影响。</p>', actions: [{ label: '清空', a: 'reset-yes', cls: 'danger' }, { label: '取消', a: 'close', cls: 'quiet' }] };
       render();
+    },
+    step: function (v) { ui.step = Number(v); render(); },
+    cfind: function () {
+      var el = document.getElementById('finder'); if (!el) return;
+      var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      try { el.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(true); }
     },
     cq: function (v) { ui.cq = v; ui.cmore = false; render(); },
     cmore: function () { ui.cmore = true; var box = document.getElementById('clist'); if (box) box.innerHTML = centreList(); },

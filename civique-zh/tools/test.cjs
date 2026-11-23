@@ -220,8 +220,8 @@ if (CODE) {
   check('no sideways scroll on words', await noOverflow(page));
   await shot(page, '12-words');
   await page.goto(base + '#about');
-  await page.waitForSelector('.facts');
-  check('about page renders', await page.locator('text=关于公民考试').count() === 1);
+  await page.waitForSelector('.faq');
+  check('about page renders', await page.locator('.faq details').count() >= 5 && await page.locator('.faq .nums li').count() === 3 && await page.locator('main .list a[href^="https://"]').count() === 5);
   await shot(page, '13-about');
   // study cards (locked)
   await page.goto(base + '#cards');
@@ -669,7 +669,7 @@ if (CODE) {
   check('nationality by declaration: no exam', /\bno\b/.test(cr.cls));
   cr = await pickPath(['申请入籍', '申请入籍，或恢复']);
   check('naturalisation by decree: must take the naturalisation exam', /\byes\b/.test(cr.cls) && /入籍的考试/.test(cr.text));
-  check('every answer cites an official page and says it is not legal advice', await page.locator('.facts a[href^="https://www.service-public.gouv.fr/"]').count() >= 1 && /不是法律意见/.test(await page.locator('main').innerText()));
+  check('every answer cites an official page and says it is not legal advice', await page.locator('.chk-src a[href^="https://www.service-public.gouv.fr/"]').count() >= 1 && /不是法律意见/.test(await page.locator('main').innerText()));
   await page.locator('[data-a="chk-go"]').click();
   await page.waitForSelector('.themes');
   check('"start practising" sets the matching exam', (await state(page)).target === 'nat');
@@ -723,6 +723,7 @@ if (CODE) {
   await page.locator('main a[href="#register"]').click();
   await page.waitForSelector('.chips .chip');
   check('registration page lists the steps and names the chosen exam', await page.locator('.steps > li').count() === 7 && await page.locator('.steps >> text=十年居留卡').count() >= 1);
+  await page.locator('.step-h').nth(2).click();
   check('booking links go to the two official organisers', await page.locator('a[href="https://test-civique.fr/inscription"]').count() === 1 && await page.locator('a[href="https://francais.cci-paris-idf.fr/candidat?produit=22"]').count() === 2);
   check('no sideways scroll on the registration page', await noOverflow(page));
   await page.locator('#cq').fill('69');
@@ -1146,6 +1147,98 @@ if (CODE) {
   // --------------------------------------------------------------------------------------------------
 
   // ==== checks for: registration, self-check, about, payment states (add directly under this line) ====
+
+  console.log('registration, self-check, about, payment states');
+  ({ ctx, page } = await fresh());
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  await page.goto(base + '#register');
+  await page.waitForSelector('.chips .chip');
+  {
+    const first = await page.evaluate(() => [...document.querySelectorAll('.steps > li')].map((li) => li.classList.contains('on')));
+    const seen = [];
+    for (let i = 0; i < 7; i++) {
+      await page.locator('.step-h').nth(i).click();
+      seen.push(await page.evaluate((i) => { const lis = [...document.querySelectorAll('.steps > li')], on = lis.filter((li) => li.classList.contains('on'));
+        return on.length === 1 && lis.indexOf(on[0]) === i && document.querySelectorAll('.step-b').length === 1 && on[0].querySelector('.step-h').getAttribute('aria-expanded') === 'true' &&
+          document.querySelectorAll('.step-h[aria-expanded="true"]').length === 1 && on[0].querySelectorAll('.step-b > p').length >= 1 && on[0].querySelectorAll('.step-b > p').length <= 2 && on[0].querySelector('.step-h b').textContent.length <= 5; }, i));
+    }
+    check('registration: the first step is open at the start, exactly one step is open at a time and all seven open in turn, each with at most two lines',
+      first.length === 7 && first[0] && first.filter(Boolean).length === 1 && seen.length === 7 && seen.every(Boolean), JSON.stringify([first, seen]));
+    await page.locator('.step-h').nth(0).click();
+    await page.locator('.step-n').click();
+    const second = await page.evaluate(() => document.querySelectorAll('.steps > li.on').length === 1 && document.querySelectorAll('.steps > li')[1].classList.contains('on'));
+    await page.locator('.step-h').nth(5).click();
+    const toExam = await page.locator('.step-b a[href="#exam"]').count();
+    await page.locator('.step-h').nth(0).click();
+    check('registration: "next step" opens the following step; step 6 leads to the mock exam and step 1 to the self-check', second && toExam === 1 && await page.locator('.step-b a[href="#check"]').count() === 1);
+    const centres = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'centres.json'), 'utf8'));
+    const regText = await page.locator('main').evaluate((m) => m.textContent);
+    const notes = [/France Éducation International/, /考场会增减/, /官方地图/, /巴黎工商会的考场不在这份名单里/, /位置只在你的手机上用来计算距离，不会上传/, /直线距离/, /费用由各考场自己定/, /报名和交费都在官方机构的网站上完成/, /本站不代办、不收报名费/];
+    const missing = notes.filter((re) => !re.test(regText)).map(String);
+    check('registration: every honesty note of the centre finder is on the page (source and its date, the other organiser, position stays on the device, straight-line distance, fees, no booking through this site)',
+      missing.length === 0 && regText.includes(centres.asof) && await page.locator('.fd-notes a[href*="france-education-international.fr"]').count() === 1 && await page.locator('.fd-notes a[href*="cci-paris-idf.fr/candidat?produit=21"]').count() === 1 &&
+      /不代办、不收报名费/.test(await page.locator('.reg-own').innerText()), missing.join(' '));
+    await page.locator('.topbar [data-a="cfind"]').click();
+    await page.locator('[data-a="cq"]').first().click();
+    await page.waitForSelector('.centre .c-acts');
+    const acts = await page.evaluate(() => [...document.querySelectorAll('.centre')].map((c) => ({ map: c.querySelectorAll('.c-acts a[href^="https://www.google.com/maps/"]').length, n: c.querySelectorAll('.c-acts a').length, h: Math.min(...[...c.querySelectorAll('.c-acts a')].map((a) => a.getBoundingClientRect().height)), cp: /\d{5}/.test(c.querySelector('.ca').textContent), name: c.querySelector('.cn').textContent.length > 1 })));
+    check('registration: a centre card shows the name, the postcode and city, and up to three actions (phone, site, map) of a tappable size',
+      acts.length > 0 && acts.every((a) => a.map === 1 && a.n >= 1 && a.n <= 3 && a.h >= 40 && a.cp && a.name), JSON.stringify(acts.slice(0, 3)));
+  }
+  {
+    const walk = async (picks) => { await page.goto(base + '#about'); await page.goto(base + '#check'); if (await page.locator('.chk-said li').count()) await page.locator('[data-a="chk-back"][data-v="0"]').first().click(); for (const l of picks) await page.locator('.chk-opt', { hasText: l }).first().click(); await page.waitForSelector('.chk-res'); };
+    const got = {};
+    for (const [v, picks, mood] of [['yes', ['多年居留卡', '未满 65', '工薪', '没有'], 'cheer'], ['no', ['续签'], 'celebrate'], ['maybe', ['申请入籍', '不清楚'], 'neutral']]) {
+      await walk(picks);
+      got[v] = await page.evaluate(([v, n, mood]) => { const r = document.querySelector('.chk-res'); return r.classList.contains(v) && r.querySelector('.six').dataset.mood === mood && r.querySelectorAll('.facts li').length >= 1 &&
+        document.querySelectorAll('.chk-src a[href^="https://"]').length >= 1 && [...document.querySelectorAll('.chk-src a')].every((a) => /service-public\.gouv\.fr|interieur\.gouv\.fr/.test(a.href)) &&
+        document.querySelectorAll('.chk-said li [data-a="chk-back"]').length === n && document.querySelectorAll('.chk-prog i.done').length === n && !document.querySelector('.chk-prog i:not(.done)') &&
+        /不是法律意见/.test(document.querySelector('.chk-legal').innerText) && /欧盟/.test(document.querySelector('.chk-legal').innerText) && /查阅于 \d{4}-\d\d-\d\d/.test(document.querySelector('.chk-legal').textContent); }, [v, picks.length, mood]);
+    }
+    await page.goto(base + '#about'); await page.goto(base + '#check');
+    await page.locator('[data-a="chk-back"][data-v="0"]').first().click();
+    const start = await page.evaluate(() => ({ dots: document.querySelectorAll('.chk-prog i').length, now: document.querySelectorAll('.chk-prog i.now').length, done: document.querySelectorAll('.chk-prog i.done').length }));
+    await page.locator('.chk-opt', { hasText: '多年居留卡' }).first().click();
+    const second = await page.evaluate(() => ({ dots: document.querySelectorAll('.chk-prog i').length, done: document.querySelectorAll('.chk-prog i.done').length, chips: document.querySelectorAll('.chk-said li').length }));
+    check('self-check: the three verdicts (must, need not, to confirm) are all reachable, each with its 小六, reasons, at least one official link and the legal note; progress dots follow the answers',
+      got.yes && got.no && got.maybe && start.dots === 4 && start.now === 1 && start.done === 0 && second.dots === 4 && second.done === 1 && second.chips === 1, JSON.stringify([got, start, second]));
+  }
+  {
+    await page.goto(base + '#about');
+    await page.waitForSelector('.faq');
+    const t = await page.locator('main').evaluate((m) => m.textContent);
+    const need = [/知识题的题干是内政部公布的官方题目/, /官方没有公布选项，本站的选项、中文翻译和讲解是自己编写的/, /情景题官方没有公布，本站的情景题是按官方讲义编写的练习题/, /正式考试的选项措辞会和这里不同/, /练习记录只保存在你这台设备上/, /不要求注册/];
+    const lost = need.filter((re) => !re.test(t)).map(String);
+    const tiles = (await page.locator('.faq .nums b').allInnerTexts()).join(',');
+    check('about: what is official and what this site wrote (four statements), privacy, the exam in three numbers, a way to the self-check',
+      lost.length === 0 && tiles === '40,45,32' && await page.locator('.faq a[href="#check"]').count() === 1 && await page.locator('.faq details[open]').count() === 1, lost.join(' ') + ' ' + tiles);
+  }
+  await ctx.close();
+  {
+    ({ ctx, page } = await fresh());
+    let reply = { error: 'pending' }, wait = 0;
+    await page.route('**/api/unlock', async (route) => { if (wait) await new Promise((r) => setTimeout(r, wait)); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reply) }); });
+    await page.goto(base + '?paid=cs_live_STATE0000001');
+    await page.waitForSelector('.pay-state.wait');
+    const waiting = await page.evaluate(() => ({ retry: document.querySelectorAll('.pay-state [data-a="pay-retry"]:not([disabled])').length, msg: document.querySelector('.pay-state .msg.bad').textContent, six: !!document.querySelector('.pay-state .six') }));
+    wait = 1500;
+    await page.locator('[data-a="pay-retry"]').click();
+    await page.waitForSelector('.pay-state.busy');
+    const busy = await page.evaluate(() => ({ bar: document.querySelectorAll('.pay-state .ps-bar').length, off: document.querySelector('.pay-state [data-a="pay-retry"]').disabled, h: document.querySelector('.pay-state h2').textContent, again: /不用再付一次/.test(document.querySelector('.pay-state').textContent) }));
+    await page.waitForSelector('.pay-state.wait');
+    wait = 0; reply = { error: 'not_paid' };
+    await page.locator('[data-a="pay-retry"]').click();
+    await page.waitForSelector('.pay-state.fail');
+    const failed = await page.evaluate(() => ({ h: document.querySelector('.pay-state h2').textContent, msg: document.querySelector('.pay-state .msg.bad').textContent, retry: document.querySelectorAll('[data-a="pay-retry"]').length, find: document.querySelectorAll('.pay-state [data-a="pay-find"]').length, gets: document.querySelectorAll('.gets .tile').length }));
+    await page.locator('[data-a="pay-find"]').click();
+    check('payment states on the unlock page: waiting (with a way to confirm again), confirming (progress cue, button off, "no need to pay twice"), not confirmed (what to do next, the rest of the offer still there)',
+      waiting.retry === 1 && /处理中/.test(waiting.msg) && waiting.six && busy.bar === 1 && busy.off && /正在确认/.test(busy.h) && busy.again &&
+      /没有确认/.test(failed.h) && /没有完成/.test(failed.msg) && failed.retry === 0 && failed.find === 1 && failed.gets >= 3 && (await state(page)).pending === null &&
+      await page.locator('#find-code[open] #mail').count() === 1 && await noOverflow(page), JSON.stringify([waiting, busy, failed]));
+    await ctx.close();
+  }
 
   // (end of: registration, self-check, about, payment states)
 

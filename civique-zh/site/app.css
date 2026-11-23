@@ -688,7 +688,7 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
 .tw.on { text-decoration: none; background: linear-gradient(transparent 14%, var(--hl) 14%, var(--hl) 90%, transparent 90%); color: var(--on-hl); border-radius: 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 div.opt { cursor: default; }
 .tw-hint { font-size: 13px; line-height: 1.5; color: var(--ink2); padding-left: 10px; border-left: 1.5px solid var(--margin); }
-.tw-pop { position: fixed; z-index: 9; left: 0; top: 0; width: max-content; min-width: 128px; max-width: min(292px, calc(100vw - 20px)); padding: 9px 14px 12px; background: var(--paper); color: var(--ink); border-radius: 12px; box-shadow: 0 0 0 1.5px var(--blue), 0 10px 26px var(--shade); }
+.tw-pop { position: fixed; z-index: 7; left: 0; top: 0; width: max-content; min-width: 128px; max-width: min(292px, calc(100vw - 20px)); padding: 9px 14px 12px; background: var(--paper); color: var(--ink); border-radius: 12px; box-shadow: 0 0 0 1.5px var(--blue), 0 10px 26px var(--shade); }
 .tw-pop::after { content: ""; position: absolute; left: var(--tw-x, 50%); bottom: -6.5px; width: 11px; height: 11px; margin-left: -5.5px; background: var(--paper); border: solid var(--blue); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 .tw-pop.below::after { bottom: auto; top: -6.5px; border-width: 1.5px 0 0 1.5px; }
 .tw-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; }
@@ -757,4 +757,4 @@ div.opt { cursor: default; }
 .chk-res.yes .chk-stamp { color: var(--bad); }
 .chk-res.no .chk-stamp { color: var(--ok); }
 .chk-res.maybe .chk-stamp { color: var(--blue); }
-
+.tw-pop { cursor: pointer; }

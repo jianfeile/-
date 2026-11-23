@@ -687,12 +687,14 @@
     wordBox.style.left = '0px'; wordBox.style.top = '0px';
     var bw = wordBox.offsetWidth, bh = wordBox.offsetHeight;
     var bar = document.querySelector('.qbar'), roof = bar ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+    var foot = document.querySelector('.dock, .tabs'), floor = foot ? Math.min(vh, foot.getBoundingClientRect().top) : vh;   // the note never covers the bottom bar
     var mid = r.left + r.width / 2;
     var left = Math.max(edge, Math.min(mid - bw / 2, vw - edge - bw));
-    var below = r.top - gap - bh < roof + 4 && r.bottom + gap + bh <= vh - 4;
+    var below = r.top - gap - bh < roof + 4 && r.bottom + gap + bh <= floor - 4;
     if (below) wordBox.className = 'tw-pop below';
+    var top = below ? r.bottom + gap : Math.max(roof + 4, r.top - gap - bh);
     wordBox.style.left = Math.round(left) + 'px';
-    wordBox.style.top = Math.round(below ? r.bottom + gap : Math.max(4, r.top - gap - bh)) + 'px';
+    wordBox.style.top = Math.round(Math.max(4, Math.min(top, floor - 4 - bh))) + 'px';
     wordBox.style.setProperty('--tw-x', Math.round(Math.max(18, Math.min(mid - left, bw - 18))) + 'px');
   }
   function tapWord(el) {
@@ -710,7 +712,14 @@
     fillWord();
   }
   document.addEventListener('click', function (ev) {
-    if (wordAt && !(ev.target.closest && ev.target.closest('.tw-pop, .tw'))) closeWord();
+    if (!wordAt || !ev.target.closest) return;
+    if (ev.target.closest('.tw-say') || ev.target.closest('.tw')) return;      // listening keeps the note open; another word replaces it
+    var onNote = ev.target.closest('.tw-pop');
+    closeWord();                                                                 // anywhere else, the note itself included
+    if (onNote && typeof ev.clientX === 'number' && document.elementFromPoint) {  // the note was lying on something: pass the tap on to it
+      var under = document.elementFromPoint(ev.clientX, ev.clientY);
+      if (under && under !== ev.target && under.click && !(under.closest && under.closest('.tw'))) under.click();
+    }
   });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeWord(); });
   // the note is pinned to the screen, so it goes when the page really moves (not for the tail end of a scroll that brought the word into view)

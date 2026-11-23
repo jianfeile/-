@@ -909,6 +909,54 @@ if (CODE) {
     await ctx.close();
   }
 
+  // ---- the word note must never stop someone finishing a set (found on a real phone)
+  console.log('word note never blocks');
+  ({ ctx, page } = await fresh({ viewport: { width: 320, height: 568 }, hasTouch: true }));
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  await page.locator('[data-a="continue"]').click();
+  await page.waitForSelector('.stem .tw');
+  {
+    const overDock = () => page.evaluate(() => { const n = document.querySelector('.tw-pop'), d = document.querySelector('.dock'); if (!n || !d) return false; return n.getBoundingClientRect().bottom > d.getBoundingClientRect().top + 1; });
+    await page.locator('.opts button.opt').first().click();
+    await page.waitForSelector('.copy');
+    let worst = false, n = await page.locator('.tw').count();
+    for (let i = 0; i < n; i++) {                       // open the note on every word of the page, wherever it sits
+      const w = page.locator('.tw').nth(i);
+      await w.scrollIntoViewIfNeeded();
+      const b = await w.boundingBox();
+      const dockTop = await page.evaluate(() => document.querySelector('.dock').getBoundingClientRect().top);
+      if (!b || b.y + b.height > dockTop || b.y < 60) continue;       // hidden behind a bar: cannot be tapped anyway
+      await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+      if (!(await page.locator('.tw-pop').count())) continue;
+      if (await overDock()) { worst = true; break; }
+    }
+    check('the word note never lies on the bottom bar, whichever word is tapped', !worst);
+    const nb = await page.locator('.dock [data-a="next"]').boundingBox();
+    await page.touchscreen.tap(nb.x + nb.width / 2, nb.y + nb.height / 2);
+    await page.waitForFunction(() => /^2 \//.test((document.querySelector('.qbar .pos') || {}).textContent || ''));
+    check('"next" works with a word note open', true);
+    // a note lying on an option: one tap on the note closes it and still answers
+    const stemWords = page.locator('.stem .tw');
+    const last = stemWords.nth(await stemWords.count() - 1);
+    await last.scrollIntoViewIfNeeded();
+    const lb = await last.boundingBox();
+    await page.touchscreen.tap(lb.x + lb.width / 2, lb.y + lb.height / 2);
+    await page.waitForSelector('.tw-pop');
+    const hit = await page.evaluate(() => { const n = document.querySelector('.tw-pop').getBoundingClientRect(); for (const el of document.querySelectorAll('.tools [data-a], .opts button.opt')) { const r = el.getBoundingClientRect(); const x = Math.max(r.left, n.left) + 4, y = Math.max(r.top, n.top) + 4; if (x < Math.min(r.right, n.right) && y < Math.min(r.bottom, n.bottom)) return { x, y, a: el.getAttribute('data-a'), zh: el.getAttribute('aria-pressed') }; } return null; });
+    if (hit) {
+      await page.touchscreen.tap(hit.x, hit.y);
+      await page.waitForTimeout(250);
+      const acted = hit.a === 'pick' ? !(await page.locator('.dock [data-a="next"]').isDisabled()) : hit.a === 'zh' ? (await page.locator('[data-a="zh"]').getAttribute('aria-pressed')) !== hit.zh : true;
+      check('a tap on the note closes it and reaches the button underneath', await page.locator('.tw-pop').count() === 0 && acted, JSON.stringify(hit));
+    } else {
+      await page.locator('.tw-pop').click();
+      check('a tap on the note closes it', await page.locator('.tw-pop').count() === 0);
+    }
+  }
+  await ctx.close();
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

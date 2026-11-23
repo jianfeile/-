@@ -143,7 +143,7 @@ if (CODE) {
   check('Chinese can be switched off again', await page.locator('.stemz').count() === 0);
   await answer(page, false);
   check('wrong answer is marked with the right one', await page.locator('.opt.wrong').count() === 1 && await page.locator('.opt.right').count() === 1);
-  check('explanation names the right letter', /正确答案是 [ABCD]/.test(await page.locator('.copy.miss h3').innerText()));
+  check('explanation names the right letter', /正确答案是\s*[ABCD]/.test(await page.locator('.copy.miss .ans').innerText()) && /答错了/.test(await page.locator('.copy.miss h3').innerText()));
   await shot(page, '05-wrong');
   let st = await state(page);
   check('progress is saved', Object.keys(st.stats).length === 2);
@@ -271,7 +271,7 @@ if (CODE) {
     await shot(page, '15-unlocked');
     await page.goto(base + '#home');
     await page.waitForSelector('.themes');
-    check('home says unlocked and hides the offer', await page.locator('.pay').count() === 0 && await page.locator('text=已解锁全部题目').count() === 1);
+    check('home says unlocked and hides the offer', await page.locator('.pay').count() === 0 && /已解锁/.test(await page.locator('.st-done').innerText()));
     if (free.cards && free.cards.length) {
       await page.goto(base + '#cards');
       await page.waitForSelector('.crow');
@@ -296,7 +296,7 @@ if (CODE) {
     if (free.meta.counts.nat) {
       await page.locator('[data-a="exam-quit"]').click();
       await page.locator('[data-a="exam-quit-yes"]').click();
-      await page.goto(base + '#home');
+      await page.goto(base + '#me');
       await page.locator('[data-a="target"][data-v="nat"]').click();
       await page.goto(base + '#exam');
       await page.locator('[data-a="exam-start"][data-v="full"]').click();
@@ -305,7 +305,7 @@ if (CODE) {
       check('the naturalisation exam also has 40 different questions', st.exam.ids.length === 40 && new Set(st.exam.ids).size === 40, String(st.exam.ids.length));
       await page.locator('[data-a="exam-quit"]').click();
       await page.locator('[data-a="exam-quit-yes"]').click();
-      await page.goto(base + '#home');
+      await page.goto(base + '#me');
       await page.locator('[data-a="target"][data-v="cr"]').click();
       await page.goto(base + '#exam');
       await page.locator('[data-a="exam-start"][data-v="full"]').click();
@@ -345,7 +345,7 @@ if (CODE) {
     await page.waitForSelector('.stem');
     st = await state(page);
     check('restarting a theme clears only that theme', before > 0 && Object.keys(st.stats).filter((id) => /^(I)\d/.test(id)).length === 0 && Object.keys(st.stats).length > 0);
-    await page.goto(base + '#about');
+    await page.goto(base + '#me');
     await page.locator('[data-a="reset"]').click();
     await page.locator('[data-a="reset-yes"]').click();
     st = await state(page);
@@ -406,6 +406,8 @@ if (CODE) {
 
     ({ ctx, page } = await fresh());
     await page.goto(base + '#unlock');
+    check('with a server, the email recovery is folded until asked for', !(await page.locator('#mail').isVisible()));
+    await page.locator('#find-code summary').click();
     await page.fill('#mail', 'nobody@example.com');
     await page.locator('#mailform button').click();
     await page.waitForSelector('#mailform .msg.bad');
@@ -558,8 +560,9 @@ if (CODE) {
   check('the sheet opens directly before any exam type is chosen, no sideways scroll at 320px', await noOverflow(page) && await page.locator('.sh-card, .sh-tiles, .sh-fig[data-g]').count() === sheet.groups.length);
   await page.goto(base + '#home');
   await page.locator('[data-a="target"][data-v="csp"]').click();
-  await page.waitForSelector('.quick a[href="#sheet"]');
-  check('home links to the sheet and still fits at 320px', await noOverflow(page) && await page.evaluate(() => [...document.querySelectorAll('.quick a')].every((a) => a.scrollWidth <= a.clientWidth + 1)));
+  await page.locator('.tabs a[href="#practice"]').click();
+  await page.waitForSelector('.hub-grid a[href="#sheet"]');
+  check('the practice hub links to the sheet and still fits at 320px', await noOverflow(page) && await page.evaluate(() => [...document.querySelectorAll('.hub-tile')].every((a) => a.scrollWidth <= a.clientWidth + 1)));
   await shot(page, '28-sheet-320');
   await ctx.close();
 
@@ -575,7 +578,7 @@ if (CODE) {
   const allCsp = Object.values(free.meta.counts.csp).reduce((a, m) => a + m.c + m.s, 0);
   check('a new user sees an invitation instead of a readiness number, and a default daily goal',
     await page.locator('.rd.rd-empty').count() === 1 && await page.locator('.rd-num').count() === 0 && /做几组题之后/.test(await page.locator('.rd').innerText()) && !/\d/.test(await page.locator('.rd').innerText()) &&
-    await flat('.plan-now') === '今天0/20题' && await page.locator('.plan-ask [data-a="plan-edit"]').count() === 1, await flat('.plan'));
+    await flat('.goal .num') === '0/20题' && /设日期/.test(await page.locator('.count[data-a="plan-edit"]').innerText()) && (await page.locator('.rd').innerText()).includes('估算，不是保证'), await flat('.goal'));
   check('ring, main button and readiness fit a 390x800 phone without scrolling', await page.evaluate(() => {
     const top = document.querySelector('.tabs').getBoundingClientRect().top;
     return ['.ring', '[data-a="continue"]', '.rd'].every((s) => { const r = document.querySelector(s).getBoundingClientRect(); return r.top >= 0 && r.bottom <= top; });
@@ -586,8 +589,10 @@ if (CODE) {
   const goal = Math.min(openCsp.length, Math.max(10, Math.min(60, Math.ceil(openCsp.length / 3))));
   st = await state(page);
   check('setting the exam date shows the days left and a daily goal computed from the questions that are open',
-    st.examDate === await dayIso(3) && (await page.locator('.plan-date b').innerText()).trim() === '3' && await flat('.plan-now') === '今天0/' + goal + '题' &&
-    (await flat('.plan-note')).includes('另有' + (allCsp - openCsp.length) + '题解锁后才能练'), await flat('.plan'));
+    st.examDate === await dayIso(3) && await page.locator('.veil').count() === 0 && (await page.locator('.count b').innerText()).trim() === '3' && await flat('.goal .num') === '0/' + goal + '题', await flat('.goal'));
+  await page.locator('.count').click();
+  check('the date sheet says how much is left to master and how much is locked', (await flat('.plan-note')).includes('另有' + (allCsp - openCsp.length) + '题解锁后才能练') && await page.locator('#examdate').inputValue() === st.examDate, await flat('.plan-note'));
+  await page.locator('.sheet [data-a="close"]').click();
   await page.locator('[data-a="continue"]').click();
   await page.waitForSelector('.stem');
   await answer(page, true);
@@ -596,7 +601,7 @@ if (CODE) {
   await page.goto(base + '#home');
   await page.waitForSelector('.themes');
   st = await state(page);
-  check('answers given in practice count toward today', await flat('.plan-now') === '今天2/' + goal + '题' && JSON.stringify(st.days[await dayIso(0)]) === '[2,1]', await flat('.plan-now') + ' ' + JSON.stringify(st.days));
+  check('answers given in practice count toward today', await flat('.goal .num') === '2/' + goal + '题' && JSON.stringify(st.days[await dayIso(0)]) === '[2,1]', await flat('.goal .num') + ' ' + JSON.stringify(st.days));
   // the estimate, computed here from the saved state: quota x (share mastered + share not mastered x 25%), knowledge and situational apart
   const known = openCsp.filter((q, i) => i % 3 !== 2);
   await page.evaluate((ids) => { const s = JSON.parse(localStorage.getItem('civique.v1')); s.stats = {}; s.sess = null; ids.forEach((id) => { s.stats[id] = [1, 1, 1, 0, 1]; }); localStorage.setItem('civique.v1', JSON.stringify(s)); }, known.map((q) => q.id));
@@ -609,12 +614,13 @@ if (CODE) {
     const share = total ? known.filter((q) => q.t === t && q.k === kind).length / total : 0;
     est += QUOTA[t][i] * (share + (1 - share) * 0.25);
   });
-  const rdText = await flat('.rd');
+  await page.locator('[data-a="rd-how"]').click();
+  const rdText = await flat('.rd') + await flat('.rd-how');
   check('the readiness number is the documented estimate, labelled as an estimate and honest about locked questions',
     (await page.locator('.rd-num b').innerText()).trim() === String(Math.round(est)) && (await page.locator('.rd-state').innerText()).trim() === (Math.round(est) >= 32 ? '可以去考' : Math.round(est) >= 28 ? '接近' : '还不够') &&
     rdText.includes('估算，不是保证') && rdText.includes('按全部' + allCsp + '题算；解锁前只能练其中' + openCsp.length + '题'), rdText + ' / expected ' + est);
-  await page.locator('[data-a="open"][data-v="rd"]').click();
-  check('the estimate explains how it is computed', /25%/.test(await page.locator('.rd-how').innerText()) && await page.locator('.rd-how li').count() === 5);
+  check('the estimate explains how it is computed, behind a tap on the tile', /25%/.test(await page.locator('.rd-how').innerText()) && await page.locator('.rd-how li').count() === 5 && (await page.locator('.rd .bar .pass').getAttribute('style')).includes('80%') && /32/.test(await page.locator('.rd .cap').innerText()));
+  await page.locator('.sheet [data-a="close"]').click();
   const weak = await page.locator('.rd-weak [data-a="start"]').getAttribute('data-v');
   await page.locator('.rd-weak [data-a="start"]').click();
   await page.waitForSelector('.stem');
@@ -630,12 +636,12 @@ if (CODE) {
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto(base + '#home');
   await page.waitForSelector('.themes');
-  check('a date in the past asks to be changed, and the latest mock exam sits next to the estimate', /已经过了/.test(await page.locator('.plan').innerText()) && await flat('.plan-now') === '今天2/' + Math.min(20, openCsp.length - known.length + 1) + '题' && (await page.locator('.rd .hero-fact b').innerText()).trim() === '8/10');
-  await page.locator('.plan-date').click();
-  check('no sideways scroll at 320px with the date form open', await page.locator('#examdate').count() === 1 && await page.locator('#examdate').getAttribute('min') === await dayIso(0) && await noOverflow(page));
-  await page.locator('#planform [data-a="plan-clear"]').click();
+  check('a date in the past asks to be changed, and the latest mock exam sits next to the estimate', /已过/.test(await page.locator('.count.late').innerText()) && await flat('.goal .num') === '2/' + Math.min(20, openCsp.length - known.length + 1) + '题' && (await page.locator('.hero-fact b').innerText()).trim() === '8/10');
+  await page.locator('.count').click();
+  check('no sideways scroll at 320px with the date form open', /已经过了/.test(await page.locator('.sheet').innerText()) && await page.locator('#examdate').count() === 1 && await page.locator('#examdate').getAttribute('min') === await dayIso(0) && await noOverflow(page));
+  await page.locator('.sheet [data-a="plan-clear"]').click();
   st = await state(page);
-  check('the exam date can be cleared', st.examDate === '' && await page.locator('.plan-date').count() === 0 && await page.locator('.plan-ask [data-a="plan-edit"]').count() === 1 && await noOverflow(page));
+  check('the exam date can be cleared', st.examDate === '' && await page.locator('.count.late').count() === 0 && /设日期/.test(await page.locator('.count[data-a="plan-edit"]').innerText()) && await noOverflow(page));
   await shot(page, '31-home-plan-320');
   await ctx.close();
 
@@ -713,7 +719,8 @@ if (CODE) {
   await page.goto(base);
   await page.locator('[data-a="target"][data-v="cr"]').click();
   await page.waitForSelector('.themes');
-  await page.locator('.tabs a[href="#register"]').click();
+  await page.locator('.tabs a[href="#me"]').click();
+  await page.locator('main a[href="#register"]').click();
   await page.waitForSelector('.chips .chip');
   check('registration page lists the steps and names the chosen exam', await page.locator('.steps > li').count() === 7 && await page.locator('.steps >> text=十年居留卡').count() >= 1);
   check('booking links go to the two official organisers', await page.locator('a[href="https://test-civique.fr/inscription"]').count() === 1 && await page.locator('a[href="https://francais.cci-paris-idf.fr/candidat?produit=22"]').count() === 2);
@@ -755,7 +762,7 @@ if (CODE) {
   check('position refused: explains and keeps the search usable', await page.locator('#cq').count() === 1 && (await page.locator('.msg.bad').innerText()).length > 5);
   await page.locator('[data-a="cq"]').first().click();
   await page.waitForSelector('.centre');
-  check('no sideways scroll at 320px with centres and six tabs', await noOverflow(page) && await page.locator('.tabs li').count() === 6);
+  check('no sideways scroll at 320px with centres and five tabs', await noOverflow(page) && await page.locator('.tabs li').count() === 5);
   await shot(page, '26-register-320');
   await ctx.close();
 
@@ -775,8 +782,9 @@ if (CODE) {
   await page.locator('[data-a="target"][data-v="csp"]').click();
   await page.waitForSelector('.themes');
   const csp = Object.values(free.meta.counts.csp).reduce((a, m) => a + m.c + m.s, 0);
-  check('home ring starts empty and shows the total from the data', await page.locator('.ring .arc').count() === 0 && (await page.locator('.ring').getAttribute('aria-label')).replace(/\s+/g, '') === '已掌握0/' + csp + '题' && await page.locator('.hero-fact').count() === 0, await page.locator('.ring').getAttribute('aria-label'));
-  check('each theme has an icon and the home actions fit at 320px', await page.locator('.theme .ti svg').count() === 5 && await page.locator('.hero [data-a="continue"]').count() === 1 && await page.locator('.hero a[href="#exam"]').count() === 1 && await page.locator('.quick a').count() === 3 && await noOverflow(page));
+  check('home ring starts empty and the mastered tile shows the total from the data', await page.locator('.ring .arc').count() === 0 && (await page.locator('.ring').getAttribute('aria-label')).replace(/\s+/g, '') === '今日目标：已完成0/20题' && (await page.locator('.st-done .num').innerText()).replace(/\s+/g, '') === '0/' + csp + '题' && await page.locator('.hero-fact').count() === 0, await page.locator('.ring').getAttribute('aria-label'));
+  check('each theme has an icon in its own colour and the home actions fit at 320px', await page.locator('.theme .ti svg:not(.hx)').count() === 5 && await page.locator('.hero [data-a="continue"]').count() === 1 && await page.locator('.tabs a[href="#exam"]').count() === 1 &&
+    new Set(await page.locator('.theme').evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor))).size === 5 && await page.locator('.pagehead a.lv[href="#me"]').count() === 1 && await noOverflow(page));
   await page.locator('[data-a="continue"]').click();
   await page.waitForSelector('.stem');
   await answer(page, true);
@@ -784,7 +792,7 @@ if (CODE) {
   await page.goto(base + '#home');
   await page.reload();
   await page.waitForSelector('.themes');
-  check('home ring counts a mastered question and the best full exam of this type is shown', await page.locator('.ring .arc').count() === 1 && (await page.locator('.ring .n').innerText()).trim() === '1' && (await page.locator('.hero-fact b').innerText()).trim() === '30/40' && await page.locator('.hero-fact b.pass').count() === 0, await page.locator('.hero-fact').innerText());
+  check('home ring counts a mastered question and the best full exam of this type is shown', await page.locator('.ring .arc').count() === 1 && (await page.locator('.st-done .num b').innerText()).trim() === '1' && (await page.locator('.hero-fact b').innerText()).trim() === '30/40' && await page.locator('.hero-fact b.pass').count() === 0, await page.locator('.hero-fact').innerText());
   console.log('offer');
   ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
   await page.goto(base + '#cards');
@@ -794,11 +802,14 @@ if (CODE) {
   await page.locator('[data-a="target"][data-v="csp"]').click();
   await page.waitForSelector('.themes');
   await page.goto(base + '#unlock');
+  await page.waitForSelector('.gets');
+  await page.locator('#cmp summary').click();
+  await page.locator('#sample summary').click();
   await page.waitForSelector('.cmp');
   {
     const csp = free.meta.counts.csp, all = Object.values(csp).reduce((n, c) => n + c.c + c.s, 0), open = free.qs.filter((q) => q.l.includes('csp')).length;
     const cells = await page.locator('.cmp tbody tr').first().locator('td b').allInnerTexts();
-    check('the offer compares the free trial with the full bank, counted from the data', cells.join('|') === open + '|' + all && (await page.locator('.offer-h').innerText()).includes(String(free.meta.total)), cells.join('|'));
+    check('the offer compares the free trial with the full bank, counted from the data', cells.join('|') === open + '|' + all && (await page.locator('.gets .tile b').first().innerText()).trim() === String(free.meta.total), cells.join('|'));
     const stem = (await page.locator('.offer-sample .stem').innerText()).trim(), q = free.qs.find((x) => x.q === stem);
     const rightAt = await page.locator('.offer-sample .opt').evaluateAll((els) => els.findIndex((e) => e.classList.contains('right')));
     check('the offer shows one free question as an example, with its explanation, the right answer not first', !!q && q.k === 'c' && q.l.includes('csp') && rightAt > 0 && await page.locator('.offer-sample .opt.right').count() === 1 && (await page.locator('.offer-sample .copy').innerText()).includes(q.e));
@@ -900,9 +911,9 @@ if (CODE) {
     const payBtn = (await page.locator('.pay a[href="#unlock"]').innerText()).replace(/\s+/g, ' ');
     const payTerms = await page.locator('.pay .buy-terms').innerText();
     await page.goto(base + '#unlock');
-    await page.waitForSelector('.cmp');
-    check('the price of config.js is written on the button of the offer, with the terms under it, and on the unlock page', price !== '' && payBtn.includes('解锁全部') && payBtn.includes(price) && /一次付款，不是订阅，长期使用/.test(payTerms) && (await page.locator('.offer-price').innerText()).includes(price), payBtn + ' / ' + payTerms);
-    check('the unlock page still says the official material is free, and when the bank was built', /官方的备考资料是免费的/.test(await page.locator('.offer-honest').innerText()) && (await page.locator('.bank-asof').innerText()).includes(free.built));
+    await page.waitForSelector('.gets');
+    check('the price of config.js is written on the button of the offer, with the terms under it, and on the unlock page', price !== '' && payBtn.includes('解锁全部') && payBtn.includes(price) && /一次付款，不是订阅，长期使用/.test(payTerms) && (await page.locator('.offer-price').innerText()).includes(price) && /一次付款，不是订阅/.test(await page.locator('.offer-price').innerText()), payBtn + ' / ' + payTerms);
+    check('the unlock page still says the official material is free, and when the bank was built', /官方备考资料是免费的/.test(await page.locator('.offer-honest').innerText()) && (await page.locator('.bank-asof').innerText()).includes(free.built));
     await page.goto(base + '#about');
     await page.waitForSelector('.bank-asof');
     const asof = await page.locator('.bank-asof').innerText();
@@ -938,9 +949,11 @@ if (CODE) {
     const href = await page.locator('.copy a.report').getAttribute('href');
     check('report with an email contact: a mailto link with the question number in subject and body', /^mailto:aide@example\.com\?subject=/.test(href) && decodeURIComponent(href).split(qid2).length === 3 && decodeURIComponent(href).includes('哪里有问题：') && (await page.locator('.copy a.report').innerText()).includes(qid2), href);
     await page.goto(base + '#unlock');
-    await page.waitForSelector('.cmp');
+    await page.waitForSelector('.gets');
     const payBtns = await page.locator('.buy a.btn').allInnerTexts();
-    check('unlock page: every pay button carries the price and the terms sit under it', payBtns.length === 2 && payBtns.every((t) => t.includes(price)) && (await page.locator('.buy-terms').allInnerTexts()).every((t) => /一次付款，不是订阅，长期使用/.test(t)) && (await page.locator('.buy a.btn').first().getAttribute('href')).startsWith('https://pay.example.com/x'), payBtns.join(' | '));
+    check('unlock page: one pay button, with the price on it and the terms right above it; the code form is folded until asked for', payBtns.length === 1 && payBtns.every((t) => t.includes(price)) && /一次付款，不是订阅/.test(await page.locator('.offer-terms').innerText()) && (await page.locator('.buy a.btn').first().getAttribute('href')).startsWith('https://pay.example.com/x') && !(await page.locator('#code').isVisible()), payBtns.join(' | '));
+    await page.locator('#have-code summary').click();
+    check('unlock page: "I already have a code" opens the form', await page.locator('#code').isVisible());
     await ctx.close();
   }
 
@@ -999,6 +1012,8 @@ if (CODE) {
   await page.waitForSelector('.themes');
   {
     const before = errors.length;
+    await page.goto(base + '#me');
+    await page.waitForSelector('[data-a="target"]');
     await page.evaluate(() => { JSON.stringify = function () { throw new Error('boom-for-test'); }; });   // the next saved action fails
     await page.locator('[data-a="target"][data-v="cr"]').click();
     await page.waitForSelector('#oops');
@@ -1009,6 +1024,114 @@ if (CODE) {
     errors.length = before;
   }
   await ctx.close();
+
+  // ---- the 闯关 system: five tabs, the two hubs, sub-pages under their tab, the feedback panel, 小六, contrast
+  console.log('navigation and design system');
+  ({ ctx, page } = await fresh({ viewport: { width: 390, height: 800 } }));
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  check('five tabs: 首页 练习 模考 速记 我的', (await page.locator('.tabs li').allInnerTexts()).map((t) => t.trim()).join(' ') === '首页 练习 模考 速记 我的' && (await page.locator('.tabs a').evaluateAll((els) => els.map((a) => a.getAttribute('href')))).join() === '#home,#practice,#exam,#cards,#me');
+  {
+    const parent = { home: 'home', practice: 'practice', mistakes: 'practice', recall: 'practice', exam: 'exam', cards: 'cards', words: 'cards', sheet: 'cards', me: 'me', register: 'me', check: 'me', about: 'me', unlock: 'me' };
+    const wrong = [], noBack = [];
+    for (const r of Object.keys(parent)) {
+      await page.goto(base + '#' + r);
+      await page.waitForFunction((h) => location.hash === '#' + h && document.querySelector('.tabs'), r);
+      const cur = await page.locator('.tabs a[aria-current="page"]').evaluateAll((els) => els.map((a) => a.getAttribute('href')).join());
+      if (cur !== '#' + parent[r]) wrong.push(r + ' -> ' + cur);
+      if (['mistakes', 'recall', 'register', 'check', 'about'].includes(r) && await page.locator('.topbar a.back[href="#' + parent[r] + '"]').count() !== 1) noBack.push(r);
+      if (!(await noOverflow(page))) wrong.push(r + ' overflows');
+    }
+    check('every page highlights the tab it belongs to, old routes still open', wrong.length === 0, wrong.join(' | '));
+    check('sub-pages have a back button to their hub', noBack.length === 0 && await (async () => { await page.goto(base + '#home'); await page.goto(base + '#unlock'); await page.locator('[data-a="back"]').click(); await page.waitForSelector('.themes'); return true; })(), noBack.join());
+  }
+  await page.goto(base + '#practice');
+  await page.waitForSelector('.hub-grid');
+  check('practice hub: five themes with a start button each, scenario-only, mistakes, recollections, the sheet',
+    await page.locator('.th-row').count() === 5 && await page.locator('.th-row [data-a="start"]').count() === 5 && await page.locator('.th-row [data-a="theme"]').count() === 5 &&
+    await page.locator('.hub-grid [data-a="start"][data-v="all|situ"]').count() === 1 && await page.locator('.hub-grid a[href="#sheet"]').count() === 1 &&
+    await page.locator('.hub-grid a[href="#mistakes"]').count() === 1 && await page.locator('.hub-grid a[href="#recall"]').count() === 1 && /非官方/.test(await page.locator('.hub-grid a[href="#recall"]').innerText()));
+  await page.locator('.hub-grid [data-a="start"][data-v="all|situ"]').click();
+  await page.waitForSelector('.stem');
+  st = await state(page);
+  check('"scenario questions only" from the hub mixes the themes and gives only scenario questions', st.sess.ids.length > 0 && st.sess.ids.every((id) => id[0] === 'S') && await page.locator('.qbar a.back[href="#practice"]').count() === 1, st.sess.ids.join());
+  await page.locator('.qbar a.back').click();
+  await page.waitForSelector('.hub-grid');
+  check('practice hub offers to continue the set in progress', await page.locator('main [data-a="continue"]').count() === 1);
+  await page.goto(base + '#me');
+  await page.waitForSelector('.seg');
+  check('我的: offer, exam type switch, exam date, self-check, registration, about, reset, bank date, disclaimer',
+    await page.locator('.pay a[href="#unlock"]').count() === 1 && await page.locator('.seg [data-a="target"]').count() === Object.keys(free.meta.counts).length && await page.locator('.seg [data-a="target"][data-v="csp"][aria-pressed="true"]').count() === 1 &&
+    await page.locator('main [data-a="plan-edit"]').count() === 1 && await page.locator('main a[href="#check"]').count() === 1 && await page.locator('main a[href="#register"]').count() === 1 && await page.locator('main a[href="#about"]').count() === 1 &&
+    await page.locator('main [data-a="reset"]').count() === 1 && (await page.locator('.bank-asof').innerText()).includes(free.built) && /不是法国政府网站/.test(await page.locator('.foot').innerText()) && /Licence Ouverte 2\.0/.test(await page.locator('.foot').innerText()) && /官方备考资料免费/.test(await page.locator('.foot').innerText()));
+  await page.locator('.seg [data-a="target"][data-v="cr"]').click();
+  await page.goto(base + '#home');
+  await page.waitForSelector('.themes');
+  check('the exam type is switched in 我的 and shown as a chip on home', (await state(page)).target === 'cr' && (await page.locator('.pagehead a.lv').innerText()).trim() === '十年卡');
+  // 小六 in each mood
+  {
+    const moods = await page.evaluate(() => [...document.querySelectorAll('.six')].map((s) => s.dataset.mood + ':' + s.querySelectorAll('path, ellipse, circle').length + ':' + Math.round(s.getBoundingClientRect().width)));
+    await page.goto(base + '#mistakes');
+    await page.waitForSelector('.empty .six');
+    const sleep = await page.locator('.empty .six').getAttribute('data-mood');
+    check('小六 is drawn on home (cheering, at a visible size) and sleeps on an empty page', moods.some((m) => /^cheer:\d\d:\d\d+$/.test(m) && Number(m.split(':')[2]) >= 60) && sleep === 'sleep', moods.join(' '));
+  }
+  await ctx.close();
+  // the feedback panel on the smallest phone, with the longest explanation of the free questions
+  ({ ctx, page } = await fresh({ viewport: { width: 320, height: 568 }, hasTouch: true }));
+  await page.goto(base);
+  await page.locator('[data-a="target"][data-v="csp"]').click();
+  await page.waitForSelector('.themes');
+  {
+    const long = free.qs.filter((q) => q.l.includes('csp') && q.v && q.v.length).sort((a, b) => (b.e.length + b.o[0].length) - (a.e.length + a.o[0].length))[0];
+    await page.evaluate((ids) => { const s = JSON.parse(localStorage.getItem('civique.v1')); s.sess = { theme: 'principes', mode: 'todo', ids: ids, i: 0, perm: {}, ans: {} }; s.zhOn = true; localStorage.setItem('civique.v1', JSON.stringify(s)); }, [long.id, free.qs.find((q) => q.l.includes('csp') && q.id !== long.id).id]);
+    await page.reload();
+    await page.goto(base + '#quiz');
+    await page.waitForSelector('.stem');
+    await answer(page, false);
+    await page.waitForSelector('.dock.fb.miss .copy');
+    await page.waitForTimeout(900);
+    const m = await page.evaluate(() => {
+      const vh = window.innerHeight, dock = document.querySelector('.dock .in').getBoundingClientRect(), next = document.querySelector('.dock [data-a="next"]'), nr = next.getBoundingClientRect();
+      const at = document.elementFromPoint(nr.left + nr.width / 2, nr.top + nr.height / 2), why = document.querySelector('.dock .why');
+      window.scrollTo(0, 0);
+      const stemTop = document.querySelector('.stem').getBoundingClientRect();
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      const lastOpt = [...document.querySelectorAll('.opts .opt')].pop().getBoundingClientRect(), dock2 = document.querySelector('.dock .in').getBoundingClientRect();
+      return { share: dock.height / vh, nextIn: nr.top >= dock.top && nr.bottom <= vh, nextFree: !!at && (at === next || next.contains(at)), scrolls: why.scrollHeight >= why.clientHeight, whyShown: why.clientHeight > 40,
+        stemReach: stemTop.bottom > 0 && stemTop.top < dock.top, optReach: lastOpt.bottom <= dock2.top + 1, explained: why.textContent.length };
+    });
+    check('feedback panel at 320x568 with a long explanation: at most ~60% of the screen, next button visible and uncovered, question and options reachable',
+      m.share <= 0.63 && m.nextIn && m.nextFree && m.whyShown && m.stemReach && m.optReach && m.explained >= long.e.length && await noOverflow(page), JSON.stringify(m));
+    await page.locator('.dock .why').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    check('the end of a long explanation is reached by scrolling inside the panel: source link and "report" stay usable', await page.locator('.dock .copy .report').isVisible() && await page.evaluate(() => { const r = document.querySelector('.dock .copy .report').getBoundingClientRect(), n = document.querySelector('.dock [data-a="next"]').getBoundingClientRect(); return r.bottom <= n.top + 1; }));
+    const nb = await page.locator('.dock [data-a="next"]').boundingBox();
+    await page.touchscreen.tap(nb.x + nb.width / 2, nb.y + nb.height / 2);
+    await page.waitForFunction(() => /^2 /.test((document.querySelector('.qbar .pos') || {}).textContent || ''));
+    check('next works from the panel by touch', await page.locator('.dock.fb').count() === 0 && await page.locator('.dock [data-a="next"]').isDisabled());
+  }
+  await ctx.close();
+  // contrast of white text on the solid tiles and panels, light and dark (WCAG: 3 for large bold text, 4.5 for body text)
+  for (const scheme of ['light', 'dark']) {
+    ({ ctx, page } = await fresh({ colorScheme: scheme }));
+    await page.goto(base);
+    await page.waitForSelector('[data-a="target"]');
+    const ratios = await page.evaluate(() => {
+      const names = ['--t-principes', '--t-institutions', '--t-droits', '--t-histoire', '--t-societe', '--g', '--red', '--ok-panel', '--bad-panel'];
+      const probe = document.createElement('i'); document.body.appendChild(probe);
+      const lum = (c) => { const m = c.match(/[\d.]+/g).slice(0, 3).map((v) => { v = Number(v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; };
+      const out = {};
+      names.forEach((n) => { probe.style.background = 'var(' + n + ')'; out[n] = Math.round(1.05 / (lum(getComputedStyle(probe).backgroundColor) + 0.05) * 100) / 100; });
+      probe.style.background = 'var(--bg)'; const bg = lum(getComputedStyle(probe).backgroundColor);
+      ['--ink', '--ink2', '--g-t', '--red-t'].forEach((n) => { probe.style.background = 'var(' + n + ')'; const l = lum(getComputedStyle(probe).backgroundColor); out[n] = Math.round((Math.max(l, bg) + 0.05) / (Math.min(l, bg) + 0.05) * 100) / 100; });
+      probe.remove();
+      return out;
+    });
+    const weak = Object.keys(ratios).filter((n) => ratios[n] < (/panel|ink|-t$/.test(n) ? 4.5 : 3));
+    check('contrast in ' + scheme + ' mode: white on every theme tile, on the brand green and on the feedback panels; text colours on the ground', weak.length === 0, JSON.stringify(ratios));
+    await ctx.close();
+  }
 
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));

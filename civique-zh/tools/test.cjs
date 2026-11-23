@@ -521,8 +521,8 @@ if (CODE) {
   const sheet = JSON.parse(fs.readFileSync(path.join(SITE, 'data', 'sheet.json'), 'utf8'));
   const sheetItems = sheet.groups.reduce((a, g) => a.concat(g.items), []);
   const sheetText = JSON.stringify(sheet);
-  check('sheet.json: 50 to 75 items, each with a key and a meaning, no addresses or links',
-    sheetItems.length >= 50 && sheetItems.length <= 75 && sheetItems.every((it) => it.k && it.k.trim() && it.v && it.v.trim()) &&
+  check('sheet.json: 50 to 90 items, each with a key and a meaning, no addresses or links',
+    sheetItems.length >= 50 && sheetItems.length <= 90 && sheetItems.every((it) => it.k && it.k.trim() && it.v && it.v.trim()) &&
     sheet.groups.every((g) => g.id && g.title && g.items.length >= 4 && g.items.length <= 8) && sheet.rule.points.length >= 4 && !/@|https?:|www\./i.test(sheetText), String(sheetItems.length));
   ({ ctx, page } = await fresh());
   await page.goto(base);
@@ -535,11 +535,15 @@ if (CODE) {
   check('the sheet opens from the switch on the cards page, free, with 速记 still highlighted',
     await page.locator('.seg a[href="#sheet"][aria-current="page"]').count() === 1 && await page.locator('.tabs a[href="#cards"][aria-current="page"]').count() === 1 &&
     await page.locator('.sheetpage .pay, .sheetpage [data-a="locked"]').count() === 0 && await page.locator('.sheetpage .foot').count() === 1 && await page.locator('.sheetpage a[href="#home"]').count() === 1);
-  const shown = await page.evaluate(() => [...document.querySelectorAll('.sh-card')].map((c) => ({ t: c.querySelector('h3').textContent, items: [...c.querySelectorAll('li')].map((li) => [li.querySelector('.k').textContent, li.querySelector('.v').firstChild.textContent.trim(), (li.querySelector('.v [lang="fr"]') || {}).textContent || '']) })));
+  // a group is a card, a row of tiles or a drawing: whatever it is, its title and every key, meaning and French term are in the text of the page
+  const squash = (s) => String(s).replace(/\s+/g, '');
+  const shown = await page.evaluate(() => ({ text: document.querySelector('.sheetpage').textContent.replace(/\s+/g, ''), groups: [...new Set([...document.querySelectorAll('.sheetpage [data-g]')].map((e) => e.dataset.g))] }));
+  const notShown = [];
+  sheet.groups.forEach((g) => { [g.title].concat(...g.items.map((it) => [it.k, it.v, it.fr || ''])).forEach((x) => { if (!shown.text.includes(squash(x))) notShown.push(x); }); });
   check('every group and item of sheet.json is on the page, and the scenario rule too',
-    JSON.stringify(shown) === JSON.stringify(sheet.groups.map((g) => ({ t: g.title, items: g.items.map((it) => [it.k, it.v, it.fr || '']) }))) &&
+    notShown.length === 0 && JSON.stringify(shown.groups.slice().sort()) === JSON.stringify(sheet.groups.map((g) => g.id).sort()) &&
     await page.locator('.sh-rule ol li').count() === sheet.rule.points.length && (await page.locator('.sh-rule p').innerText()) === sheet.rule.lead &&
-    (await page.locator('.sh-exam').innerText()).replace(/\s+/g, ' ').includes('40') && await page.locator('.sh-card .k.hl').count() === sheetItems.filter((it) => it.hl).length);
+    (await page.locator('.sh-exam').innerText()).replace(/\s+/g, ' ').includes('40') && await page.locator('.sheetpage .k.hl, .tl-row .v-hl').count() === sheetItems.filter((it) => it.hl).length, notShown.join(' | '));
   check('no sideways scroll on the sheet', await noOverflow(page));
   await shot(page, '27-sheet');
   await page.goto(base + '#home');
@@ -551,7 +555,7 @@ if (CODE) {
   ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
   await page.goto(base + '#sheet');
   await page.waitForSelector('.sh-card');
-  check('the sheet opens directly before any exam type is chosen, no sideways scroll at 320px', await noOverflow(page) && await page.locator('.sh-card').count() === sheet.groups.length);
+  check('the sheet opens directly before any exam type is chosen, no sideways scroll at 320px', await noOverflow(page) && await page.locator('.sh-card, .sh-tiles, .sh-fig[data-g]').count() === sheet.groups.length);
   await page.goto(base + '#home');
   await page.locator('[data-a="target"][data-v="csp"]').click();
   await page.waitForSelector('.quick a[href="#sheet"]');
@@ -671,6 +675,37 @@ if (CODE) {
   await page.waitForSelector('.chk-opt');
   check('no sideways scroll at 320px on the self-check', await noOverflow(page));
   await shot(page, '27-check-320');
+  await ctx.close();
+
+  // ---- 考前一页: the drawings (three powers, timeline, map), at the narrowest width
+  console.log('sheet drawings');
+  ({ ctx, page } = await fresh({ viewport: { width: 320, height: 640 } }));
+  await page.goto(base + '#sheet');
+  await page.waitForSelector('#fig-map .sh-svg');
+  const yearOf = (it) => { const m = /^(\d{4})(?:–\d{4})?$/.exec(it.k); return m && Number(m[1]) >= 1000 && Number(m[1]) <= 2100 ? Number(m[1]) : (it.t || 0); };
+  const dated = sheetItems.filter(yearOf);
+  const tlRows = await page.evaluate(() => [...document.querySelectorAll('#fig-tl .tl-row')].map((g) => ({ t: Number(g.dataset.t), s: g.textContent.replace(/\s+/g, '') })));
+  check('the timeline shows every dated item of the sheet, in chronological order',
+    dated.length >= 12 && tlRows.length === dated.length && tlRows.every((r, i) => !i || tlRows[i - 1].t <= r.t) &&
+    dated.every((it) => tlRows.some((r) => r.t === yearOf(it) && r.s.includes((it.t ? it.tl : it.k + it.v).replace(/\s+/g, '')))), JSON.stringify(tlRows.map((r) => r.t)));
+  const geo = sheet.map, geoPlaces = [].concat(geo.seas, geo.lands, geo.cities, geo.rivers, geo.mounts, geo.tops, geo.isles);
+  const geoNames = geoPlaces.map((l) => l.k).concat(...geo.dom.map((g) => g.items.map((it) => it.k)));
+  const onMap = await page.evaluate(() => ({ land: document.querySelector('#fig-map path.v-land').getAttribute('d'), coast: document.querySelector('#fig-map path.v-coast').getAttribute('d'),
+    names: [...document.querySelectorAll('#fig-map text[data-k]')].map((x) => x.dataset.k), rivers: document.querySelectorAll('#fig-map path.v-river').length }));
+  check('the map has the outline of France and every geography label, each one tied to a question or a study card',
+    onMap.land === geo.land && (geo.land.match(/l/g) || []).length > 150 && onMap.coast === geo.coast && onMap.rivers === geo.rivers.length && geoNames.length >= 30 &&
+    geoNames.every((k) => onMap.names.includes(k)) && geoPlaces.concat(geo.dom).every((l) => /^[HI]\d{3}$|^K-CK\d-\d\d$/.test(l.s)) && JSON.stringify(geo).length < 12000,
+    geoNames.filter((k) => !onMap.names.includes(k)).join(' '));
+  const instText = (await page.locator('#fig-inst .sh-svg').textContent()).replace(/\s+/g, '');
+  check('the three powers are drawn with 577 deputies, 348 senators and who appoints whom',
+    ['577', '348', '立法权', '行政权', '司法权', '表决法律', '执行法律', '审判', '任命', '选举', 'Assembléenationale', 'Sénat'].every((x) => instText.includes(x)) && await page.locator('#fig-inst .v-arrow').count() === 3, instText);
+  const figFit = await page.evaluate(() => [...document.querySelectorAll('.sh-fig .sh-svg')].map((s) => s.getBoundingClientRect()).every((r) => r.left >= 0 && r.right <= window.innerWidth && r.width > 250));
+  await page.locator('#fig-map .sh-zoom').click();
+  await page.waitForSelector('.veil .sh-zoomed .v-map.big');
+  const zoomed = await page.evaluate(() => { const z = document.querySelector('.sh-zoomed'); return { pan: z.scrollWidth > z.clientWidth + 50, fr: z.textContent.includes('la Manche') && z.textContent.includes('Marseille') }; });
+  check('no sideways scroll at 320px with the drawings; the map opens larger with the French names', figFit && await noOverflow(page) && zoomed.pan && zoomed.fr && await page.locator('.sh-fig').count() === 3, JSON.stringify([figFit, zoomed]));
+  await page.locator('.sheet [data-a="close"]').click();
+  await shot(page, '28b-sheet-drawings-320');
   await ctx.close();
 
   console.log('registration page');

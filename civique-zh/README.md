@@ -26,6 +26,7 @@ tools/
   test.cjs            浏览器自动测试
   preview.mjs         把整个网页打成一个文件
   icons.cjs           生成图标
+  map.mjs             生成“考前一页”的法国地图（轮廓来自 Natural Earth，公有领域；写入 sheet.json 的 map）
 ```
 
 题库原文（`content/`）和解锁码不放进仓库。原文可以随时用任意一个有效解锁码从 `data/bank.json` 里导出。

@@ -425,6 +425,96 @@ h2 { font-size: 17px; font-weight: 700; line-height: 1.35; text-wrap: balance; }
   .sheetpage .foot a { color: inherit; }
 }
 
+/* cram sheet, the drawings: a timeline along the red margin, a map, the three powers. Inline SVG, 340 units wide,
+   coloured here so that they follow the theme and print in black. Every figure is framed to be screenshotted alone. */
+.sh-grid > .sh-fig, .sh-grid > .sh-tiles { grid-column: 1 / -1; min-width: 0; }
+.sh-fig { margin: 0; border-radius: 6px; padding: 8px 12px 14px; background: var(--paper); box-shadow: 0 0 0 1px var(--line), 0 6px 16px -10px var(--shade); scroll-margin-top: 16px; }
+.sh-fig figcaption { display: flex; align-items: center; gap: 10px; min-height: 36px; margin-bottom: 4px; }
+.sh-fig h3, .sh-tiles h3 { font-size: 13px; font-weight: 700; letter-spacing: .08em; color: var(--blue); white-space: nowrap; }
+.sh-fig figcaption span { flex: 1 1 0; min-width: 0; font-size: 12px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sh-zoom { flex: none; width: 44px; height: 44px; margin: -4px -10px -4px auto; display: grid; place-items: center; color: var(--blue); border-radius: 50%; }
+.sh-zoom svg { width: 21px; height: 21px; }
+.sh-draw { cursor: zoom-in; }
+.sh-cap { margin-top: 10px; font-size: 12px; line-height: 1.55; color: var(--ink2); }
+.sh-svg { display: block; width: 100%; max-width: 440px; height: auto; margin: 0 auto; }
+.sh-svg text { font-family: var(--font-zh); fill: var(--ink); }
+.sh-svg .v-t { font-weight: 700; }
+.sh-svg .v-cap { letter-spacing: .08em; }
+.sh-svg .v-num { font-family: var(--font-num); font-weight: 700; letter-spacing: -.03em; }
+.sh-svg .v-2 { fill: var(--ink2); }
+.sh-svg .v-b { fill: var(--blue); }
+.sh-svg .v-fr { font-family: var(--font-fr); font-weight: 400; fill: var(--ink2); letter-spacing: 0; }
+.sh-svg .v-on { fill: var(--on-hl); }
+.v-hl { fill: var(--hl); }
+.v-rule { fill: none; stroke: var(--rule); stroke-width: 1; }
+.v-margin { fill: none; stroke: var(--margin); stroke-width: 1.5; opacity: .8; }
+.v-dot { fill: var(--blue); stroke: var(--paper); stroke-width: 2; }
+.v-ring { fill: var(--paper); stroke: var(--blue); stroke-width: 1.8; }
+.v-bar { fill: var(--blue-soft); stroke: var(--blue); stroke-width: 1.4; }
+.v-block { fill: var(--panel); }
+.v-box { fill: var(--paper); stroke: var(--blue); stroke-width: 1.6; }
+.v-arrow, .v-pic { fill: none; stroke: var(--blue); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.v-pic { stroke-width: 1.3; }
+.v-land { fill: var(--blue-soft); }
+.v-coast { fill: none; stroke: var(--blue); stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+.v-border { fill: none; stroke: var(--ink2); stroke-width: 1.2; stroke-dasharray: 3.5 3; stroke-linejoin: round; }
+.v-river { fill: none; stroke: var(--blue); stroke-width: 1.3; stroke-linecap: round; opacity: .7; }
+.v-peak { fill: none; stroke: var(--ink2); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.v-top { fill: var(--margin); stroke: var(--margin); stroke-width: 1.4; stroke-linejoin: round; }
+.v-city { fill: var(--ink); }
+.v-city.v-on { fill: var(--on-hl); }
+.sh-svg .v-sea { fill: var(--blue); letter-spacing: .14em; }
+.sh-svg .v-sea .v-fr { fill: var(--blue); opacity: .8; }
+.sh-svg .v-halo { paint-order: stroke; stroke: var(--blue-soft); stroke-width: 3px; stroke-linejoin: round; }
+.sh-zoomed { flex: none; overflow: auto; max-height: 64vh; border-radius: 6px; padding: 10px; box-shadow: 0 0 0 1px var(--line); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.sh-zoomed .sh-svg { max-width: none; }
+.sh-zoomed.wide .sh-svg { width: 185%; }
+/* big-number tiles (emergency numbers, the EU in three numbers) */
+.sh-tiles h3 { line-height: 25px; margin-bottom: 3px; }
+.sh-tiles ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line); }
+.sh-tiles ul.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sh-tiles li { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; align-content: flex-start; column-gap: 6px; padding: 11px 4px 10px; text-align: center; min-width: 0; }
+.sh-tiles ul.n3 li:not(:nth-child(3n + 1)), .sh-tiles ul.n2 li:nth-child(2n) { box-shadow: -1px 0 0 var(--line); }
+.sh-tiles ul.n3 li:nth-child(n + 4), .sh-tiles ul.n2 li:nth-child(n + 3) { border-top: 1px solid var(--line); }
+.sh-tiles .k { font-family: var(--font-num); font-weight: 700; font-size: 27px; line-height: 1.15; letter-spacing: -.02em; }
+.sh-tiles .k.hl { padding: 0 6px; border-radius: 2px; background: linear-gradient(transparent 14%, var(--hl) 14%, var(--hl) 88%, transparent 88%); color: var(--on-hl); }
+.sh-tiles .v { flex: 0 0 100%; font-size: 12.5px; line-height: 1.35; margin-top: 3px; overflow-wrap: anywhere; }
+.sh-tiles .v i { display: block; font-style: normal; font-size: 12px; color: var(--ink2); }
+.sh-pic { width: 22px; height: 22px; color: var(--blue); flex: none; }
+.sh-pic .p-b { fill: var(--blue); }
+.sh-pic .p-r { fill: var(--margin); stroke: var(--margin); }
+.sh-card.pics li { display: block; position: relative; padding-left: 32px; }
+.sh-card.pics .sh-pic { position: absolute; left: 1px; top: calc((var(--lh) - 22px) / 2 - 1px); }
+.sh-card.pics .k { flex: none; margin-right: 7px; line-height: 0; }
+.sh-card.pics .v { line-height: 0; }
+@media (max-width: 339px) {
+  .sh-fig { padding-left: 8px; padding-right: 8px; }
+  .sh-tiles .k { font-size: 23px; }
+  .sh-pic { width: 19px; height: 19px; }
+}
+@media (min-width: 480px) { .sh-fig { padding: 10px 16px 18px; } }
+@media print {
+  .sheetpage { --blue-soft: #ececec; --panel: #f1f1f1; }
+  .sheetpage .sh-grid { column-count: 2; column-gap: 12px; }
+  .sheetpage .sh-zoom, .sheetpage .sh-cap { display: none; }
+  .sheetpage .sh-fig, .sheetpage .sh-tiles { break-inside: avoid; margin-bottom: 8px; box-shadow: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px 8px; }
+  .sheetpage .sh-fig figcaption { min-height: 0; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+  .sheetpage .sh-fig h3, .sheetpage .sh-tiles h3 { font-size: 11.5px; line-height: 20px; }
+  .sheetpage .sh-svg { max-width: 100%; }
+  .sheetpage .sh-svg .v-hl { fill: #fff; stroke: #000; stroke-width: 1; }
+  .sheetpage .sh-svg .v-dot { stroke-width: 0; }
+  .sheetpage .sh-tiles ul { border-top-width: 1px; border-bottom: 0; }
+  .sheetpage .sh-tiles li { padding: 6px 2px; }
+  .sheetpage .sh-tiles .k { font-size: 19px; }
+  .sheetpage .sh-tiles .k.hl { background: none; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+  .sheetpage .sh-tiles .v { font-size: 11px; }
+  .sheetpage .sh-tiles .v i { font-size: 10.5px; }
+  .sheetpage .sh-pic { width: 16px; height: 16px; }
+  .sheetpage .sh-pic .p-r { fill: #999; stroke: #000; }
+  .sheetpage .sh-card.pics li { padding-left: 24px; }
+  .sheetpage .sh-card.pics .sh-pic { top: 2px; }
+}
+
 /* ---- welcome (first visit) ---- */
 /* A sheet of the notebook: the headline sits on the ruled lines, the pass mark is the teacher's red grade. */
 .wl { gap: 20px; }

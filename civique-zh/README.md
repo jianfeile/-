@@ -115,6 +115,22 @@ CIVIQUE_CODE=XXXX-XXXX-XXXX node tools/test.cjs        # 跑一遍测试
 官方文字没有写死的情况（例如在法国上过学而免签融入合同的人），结论是“很可能不用考，请向省政府确认”，不给肯定答案。
 官方页面更新后要重新核对这两张表，并改页面底部的查阅日期。
 
+## 朗读录音
+
+点“听”时播放的是提前录好的音频（`site/audio/`，每道题干、每个选项、每个词一段小 mp3），所有手机听到的都一样；
+某段录音不存在或播放不了时，才退回到手机自带的语音。文件名由文字算出（`site/app.js` 和 `tools/audio_names.mjs` 里的同一组函数）。
+
+改了题目或生词后重新录：
+
+```
+node tools/audio.mjs --content content > clips.json            # 列出所有要录的文字
+python -m venv venv && venv/bin/pip install piper-tts lameenc
+venv/bin/python tools/audio_gen.py clips.json site/audio fr_FR-siwis-medium.onnx   # 已有的文件会跳过
+```
+
+语音合成用开源的 Piper，声音 `fr_FR-siwis-medium`（来自 huggingface.co/rhasspy/piper-voices），基于 SIWIS 法语语料库，许可 CC BY 4.0，
+网站“说明”页有署名。
+
 ## 测试
 
 ```

@@ -13,7 +13,7 @@ const SITE = path.resolve(__dirname, '..', 'site');
 const CODE = process.env.CIVIQUE_CODE || '';
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? path.resolve(process.argv[shotsAt + 1]) : null;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.mp3': 'audio/mpeg' };
 
 // ---- a stand-in for Stripe: the unlock function is the real one, only its calls to Stripe are answered here
 const SESSIONS = {
@@ -1442,7 +1442,8 @@ if (CODE) {
   // ---- reading French aloud: a French voice is chosen, never the phone's default one
   console.log('speech');
   {
-    const fakeSpeech = (voices) => `(() => { const said = []; window.__said = said;
+    // these three checks are about the phone's own voice, the fallback: recordings are switched off for them
+    const fakeSpeech = (voices) => `(() => { const said = []; window.__said = said; try { Object.defineProperty(window, 'Audio', { value: undefined, configurable: true }); } catch (e) {}
       class U { constructor(t) { this.text = t; this.lang = ''; this.voice = null; this.rate = 1; } }
       window.SpeechSynthesisUtterance = U;
       const synth = { getVoices: () => ${JSON.stringify(voices)}, cancel() {}, speak(u) { said.push({ text: u.text, lang: u.lang, voice: u.voice && u.voice.name }); }, addEventListener() {} };
@@ -1472,7 +1473,42 @@ if (CODE) {
     await page.locator('[data-a="say"]').first().click();
     await page.waitForSelector('#saynote');
     said = await page.evaluate(() => window.__said);
-    check('a phone with no French voice says so instead of reading French with another language\'s voice', said.length === 0 && /没有法语语音/.test(await page.locator('#saynote').innerText()));
+    check('a phone that lists no French voice still gets the French request, with a warning that it may be poor', said.length === 1 && said[0].lang === 'fr-FR' && !said[0].voice && /没有找到法语语音/.test(await page.locator('#saynote').innerText()), JSON.stringify(said));
+    await ctx.close();
+  }
+
+  // ---- recordings: what is read aloud comes from site/audio, the same on every phone
+  console.log('recordings');
+  {
+    const tool = await import(require('url').pathToFileURL(path.resolve(__dirname, 'audio_names.mjs')).href);
+    const fileOf = (text) => { const n = tool.clipName(text); return path.join(SITE, 'audio', n.slice(0, 2), n + '.mp3'); };
+    const need = new Set();
+    for (const q of free.qs) { need.add(q.q); for (const o of q.o) need.add(o); for (const v of q.v || []) need.add(v[0]); }
+    for (const c of free.cards || []) for (const v of c.v || []) need.add(v[0]);
+    const lost = [...need].filter((x) => !fs.existsSync(fileOf(x)));
+    check('every stem, option and vocabulary entry of the free questions has a recording', need.size > 300 && lost.length === 0, lost.length + ' missing of ' + need.size + ': ' + lost.slice(0, 3).join(' | '));
+    ({ ctx, page } = await fresh());
+    const asked = [];
+    page.on('request', (r) => { if (/\/audio\//.test(r.url())) asked.push(r.url()); });
+    await ctx.addInitScript(() => { const said = []; window.__said = said; class U { constructor(t) { this.text = t; } }
+      window.SpeechSynthesisUtterance = U; Object.defineProperty(window, 'speechSynthesis', { value: { getVoices: () => [], cancel() {}, speak(u) { said.push(u.text); }, addEventListener() {} }, configurable: true });
+      const play = HTMLMediaElement.prototype.play; window.__played = []; HTMLMediaElement.prototype.play = function () { window.__played.push(this.src); return play.call(this); }; });
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForSelector('.themes');
+    await page.locator('[data-a="continue"]').click();
+    await page.waitForSelector('[data-a="say"]');
+    const stemText = (await page.locator('.stem').first().innerText()).trim();
+    await page.locator('[data-a="say"]').first().click();
+    await page.waitForFunction(() => window.__played.length > 0);
+    const want = tool.clipName(stemText);
+    const first = await page.evaluate(() => window.__played[0]);
+    check('"listen" plays the recording of the question, not the phone\'s voice', first.endsWith('/audio/' + want.slice(0, 2) + '/' + want + '.mp3') && (await page.evaluate(() => window.__said.length)) === 0, first);
+    const names = await page.evaluate((list) => { /* same key in the page and in the tool */ const out = []; for (const t of list) { const b = document.createElement('button'); b.setAttribute('data-a', 'word'); b.setAttribute('data-v', t); document.body.appendChild(b); window.__played.length = 0; b.click(); out.push(window.__played[0] || ''); b.remove(); } return out; }, ['l’infraction', 'Liberté, Égalité, Fraternité', 'LA  LAÏCITÉ']);
+    check('the page and the recording tool agree on file names', names.every((u, i) => u.endsWith(tool.clipName(['l’infraction', 'Liberté, Égalité, Fraternité', 'LA  LAÏCITÉ'][i]) + '.mp3')), names.join(' '));
+    await page.evaluate(() => { window.__played.length = 0; const b = document.createElement('button'); b.setAttribute('data-a', 'word'); b.setAttribute('data-v', 'un mot qui n’a pas de fichier zzz'); document.body.appendChild(b); b.click(); b.remove(); });
+    await page.waitForFunction(() => window.__said.length > 0, null, { timeout: 8000 });
+    check('a text with no recording falls back to the phone\'s voice', (await page.evaluate(() => window.__said[0])) === 'un mot qui n’a pas de fichier zzz');
     await ctx.close();
   }
 

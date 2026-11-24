@@ -445,13 +445,47 @@
   }
 
   // ---------------------------------------------------------------- speech
-  var canSpeak = 'speechSynthesis' in window && typeof window.SpeechSynthesisUtterance !== 'undefined';
+  // Reading aloud. First choice: a recording made in advance (site/audio, one small mp3 per question, option, word),
+  // the same on every phone. Second choice, when a recording is missing or cannot be played: the phone's own voice.
+  var canTTS = 'speechSynthesis' in window && typeof window.SpeechSynthesisUtterance !== 'undefined';
+  var canClips = CFG.audio !== false && typeof window.Audio !== 'undefined';
+  var canSpeak = canTTS || canClips;
+  function akey(t) { return String(t).normalize('NFC').replace(/[’ʼ]/g, "'").replace(/\s+/g, ' ').trim().toLowerCase(); }
+  function clipName(t) {
+    var s = akey(t), a = 0x811c9dc5, b = 0x01000193;
+    for (var i = 0; i < s.length; i++) { var c = s.charCodeAt(i); a = Math.imul(a ^ c, 0x01000193) >>> 0; b = (Math.imul(b + c, 0x9e3779b1) ^ (b >>> 15)) >>> 0; }
+    return ('0000000' + a.toString(16)).slice(-8) + ('0000000' + b.toString(16)).slice(-8);
+  }
+  var player = null, queue = [], playing = 0;
+  // texts: what to read, in order. Each is played from its recording; from the first one that has none, the rest
+  // is handed to the phone's voice.
+  function playClips(texts) {
+    stopClips();
+    if (!canClips) return tts(texts.join(' ... '));
+    queue = texts.slice(); var run = ++playing;
+    if (!player) { try { player = new window.Audio(); player.preload = 'auto'; } catch (e) { canClips = false; return tts(texts.join(' ... ')); } }
+    function fallback() { if (run !== playing) return; var rest = queue.slice(); queue = []; tts(rest.join(' ... ')); }
+    function next() {
+      if (run !== playing) return;
+      if (!queue.length) return;
+      var name = clipName(queue[0]);
+      player.onended = function () { if (run !== playing) return; queue.shift(); next(); };
+      player.onerror = fallback;
+      try {
+        player.src = 'audio/' + name.slice(0, 2) + '/' + name + '.mp3';
+        var p = player.play();
+        if (p && p.catch) p.catch(function (e) { if (e && e.name === 'AbortError') return; fallback(); });
+      } catch (e) { fallback(); }
+    }
+    next();
+  }
+  function stopClips() { playing++; queue = []; if (player) { try { player.onended = null; player.onerror = null; player.pause(); } catch (e) { /* nothing playing */ } } }
   // The phone's own voices do the reading. Saying "this is French" is not enough: many phones (and WeChat's browser)
   // then read French with the default Chinese or English voice. So a French voice is chosen by name, and when the
   // phone has none, the user is told instead of hearing nonsense.
   var frVoice = null, voicesSeen = false;
   function pickVoice() {
-    if (!canSpeak) return;
+    if (!canTTS) return;
     var list = [];
     try { list = window.speechSynthesis.getVoices() || []; } catch (e) { list = []; }
     if (!list.length) return;
@@ -468,7 +502,7 @@
     }
     frVoice = best;
   }
-  if (canSpeak) {
+  if (canTTS) {
     pickVoice();
     try { window.speechSynthesis.addEventListener('voiceschanged', pickVoice); } catch (e) { try { window.speechSynthesis.onvoiceschanged = pickVoice; } catch (x) { /* older engines */ } }
   }
@@ -481,11 +515,14 @@
       .replace(/\b(Louis|Napoléon|Charles|François|Henri|Philippe|Clovis|Jean|Léon|Pie|Benoît)(-[A-Z][a-zé]+)?\s+([IVXLC]{1,6})\b/g, function (m, name, extra, r) { var n = fromRoman(r); return n > 0 && n < 100 ? name + (extra || '') + ' ' + n : m; })
       .replace(/[«»]/g, ' ').replace(/\s+/g, ' ').trim();
   }
-  function speak(text) {
-    if (!canSpeak) return;
+  function speak(text) { playClips(Array.isArray(text) ? text : [text]); }
+  function tts(text) {
+    if (!canTTS || !text) return;
     try {
       if (!frVoice) pickVoice();
-      if (voicesSeen && !frVoice) { sayNote('这台手机没有法语语音，读不了法语。可以在手机设置里添加“法语”朗读语音，或换用 Safari、Chrome 打开。'); return; }
+      // No French voice in the phone's list: still ask for French (some phones speak it without listing it), and say
+      // once that the result may be poor, rather than staying silent.
+      if (voicesSeen && !frVoice && !speak.warned) { speak.warned = true; sayNote('这台手机的法语朗读可能不准：系统里没有找到法语语音。可以在手机设置里添加“法语”朗读语音。'); }
       window.speechSynthesis.cancel();
       var u = new window.SpeechSynthesisUtterance(forVoice(text));
       u.lang = frVoice ? frVoice.lang : 'fr-FR';
@@ -503,7 +540,7 @@
       sayNote.t = setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 6000);
     } catch (e) { /* a note only */ }
   }
-  function hush() { if (canSpeak) { try { window.speechSynthesis.cancel(); } catch (e) { /* nothing playing */ } } }
+  function hush() { stopClips(); if (canTTS) { try { window.speechSynthesis.cancel(); } catch (e) { /* nothing playing */ } } }
 
   // ---------------------------------------------------------------- practice sessions
   function startPractice(tid, mode) {
@@ -1910,6 +1947,7 @@
       '</div><p class="small">报名、考点和费用以两家考试机构的网站为准。</p>' +
       '<div class="list">' + own('#check', 'check', '我要不要考？', '30 秒自测 · 本站整理') + own('#register', 'register', '报名步骤和考场查询', '本站整理') + '</div></section>';
     out += bankLine() + (CFG.seller ? '<p class="small center">经营者：' + esc(CFG.seller) + '</p>' : '');
+    out += '<p class="small center">朗读录音由开源语音合成 Piper 生成，声音基于 SIWIS 法语语料库（CC BY 4.0）。</p>';
     return out + (DB.free ? disclaimer() : '') + '</main>' + tabs('me');
   }
   // what is open for free and what the unlock adds, counted from the data (for the chosen exam when there is one)
@@ -2104,7 +2142,8 @@
       var q = null, perm = null;
       if (route() === 'quiz' && S.sess) { var id = S.sess.ids[S.sess.i]; q = DB.byId[id]; perm = permFor(S.sess, id); }
       if (!q) return;
-      speak(q.q + ' ... ' + perm.map(function (orig, pos) { return LETTERS[pos] + '. ' + q.o[orig]; }).join(' ... '));
+      var parts = [q.q]; perm.forEach(function (orig, pos) { parts.push(LETTERS[pos]); parts.push(q.o[orig]); });
+      speak(parts);
     },
     word: function (v) { speak(v); },
     tw: function (v, el) { tapWord(el); },

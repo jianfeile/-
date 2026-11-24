@@ -525,7 +525,7 @@
   }
 
   // ---------------------------------------------------------------- pieces of markup
-  // ---- brand pieces: icons, the hexagon, 小六
+  // ---- brand pieces: icons, the hexagon, 小玛
   // icons: 24 x 24, round 2.4 stroke in currentColor; the few solid ones carry their own fill
   var ICON = {
     home: '<path d="M3.5 11 12 3.5 20.5 11v8.500a1.500 1.500 0 0 1-1.500 1.500h-4.500v-6h-5v6H5a1.500 1.500 0 0 1-1.500-1.500z" fill="currentColor" stroke-width="1.5"/>',
@@ -563,33 +563,49 @@
   // the hexagon: brand shape behind option letters, theme icons and the active tab
   function hex(cls) { return '<svg class="' + (cls || 'hx') + '" viewBox="0 0 40 40" aria-hidden="true"><path d="M35 20 27.5 33h-15L5 20l7.5-13h15z" fill="currentColor" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/></svg>'; }
   function hexBadge(inner, cls) { return '<span class="hexic' + (cls ? ' ' + cls : '') + '">' + hex() + inner + '</span>'; }
-  // a hexagon progress ring with something in the middle (小六 on the home screen). pct: 0 to 100
+  // a hexagon progress ring with something in the middle (小玛 on the home screen). pct: 0 to 100
   function hexRing(pct, inner, label) {
     var d = 'M70 15.5H98.5L130 70 98.5 124.5H41.5L10 70 41.5 15.500z';
     pct = Math.max(0, Math.min(100, pct));
     return '<div class="hexring ring" role="img" aria-label="' + esc(label) + '"><svg class="r" viewBox="0 0 140 140" aria-hidden="true"><path class="trk" d="' + d + '"/>' +
       (pct > 0 ? '<path class="arc" d="' + d + '" pathLength="100" stroke-dasharray="' + (Math.round(pct * 10) / 10) + ' 100"/>' : '') + '</svg>' + (inner || '') + '</div>';
   }
-  // 小六, the mascot: a yellow hexagon (France is « l'Hexagone »). Moods: cheer, console, celebrate, neutral, sleep.
-  var SIX_BODY = '<ellipse cx="46" cy="109" rx="10" ry="5.5" fill="#B87900"/><ellipse cx="74" cy="109" rx="10" ry="5.5" fill="#B87900"/>' +
-    '<path d="M100 64 80 98.6H40L20 64l20-34.6h40z" fill="#DE9A00" stroke="#DE9A00" stroke-width="14" stroke-linejoin="round"/>' +
-    '<path d="M100 58 80 92.6H40L20 58l20-34.6h40z" fill="#FFC933" stroke="#FFC933" stroke-width="14" stroke-linejoin="round"/>' +
-    '<path d="M41 25h14" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".55"/><circle cx="32" cy="69" r="6" fill="#FF7A59" opacity=".65"/><circle cx="88" cy="69" r="6" fill="#FF7A59" opacity=".65"/>';
-  function sixEyes(y, rx, ry) {
-    return '<ellipse cx="46" cy="' + y + '" rx="' + rx + '" ry="' + ry + '" fill="#10302A"/><ellipse cx="74" cy="' + y + '" rx="' + rx + '" ry="' + ry + '" fill="#10302A"/>' +
-      '<circle cx="47.6" cy="' + (y - 2.5) + '" r="1.8" fill="#fff"/><circle cx="75.6" cy="' + (y - 2.5) + '" r="1.8" fill="#fff"/>';
-  }
-  var SIX = {   // [arms, face]
-    cheer: ['M19 58 6 40M101 58l13-18', sixEyes(55, 5, 6.5) + '<path d="M50 67q10 15 20 0z" fill="#10302A" stroke="#10302A" stroke-width="3" stroke-linejoin="round"/><ellipse cx="60" cy="74" rx="4" ry="2.4" fill="#FF7A59"/>'],
-    console: ['M19 60 9 76M101 58l12-19', '<path d="M38 45.5 51 42M82 45.5 69 42" stroke="#10302A" stroke-width="3.2" stroke-linecap="round"/>' + sixEyes(57, 4.6, 5.6) + '<path d="M53 70q7 6 14 0" fill="none" stroke="#10302A" stroke-width="3.6" stroke-linecap="round"/>'],
-    celebrate: ['M20 56 8 32M100 56l12-24', '<path d="M39 58q7-11 14 0M67 58q7-11 14 0" fill="none" stroke="#10302A" stroke-width="4.2" stroke-linecap="round"/><path d="M47 66q13 20 26 0z" fill="#10302A" stroke="#10302A" stroke-width="3" stroke-linejoin="round"/><ellipse cx="60" cy="76" rx="5.5" ry="3" fill="#FF7A59"/>'],
-    neutral: ['M19 62 10 79M101 62l9 17', sixEyes(55, 4.8, 6) + '<path d="M54 70h12" fill="none" stroke="#10302A" stroke-width="3.6" stroke-linecap="round"/>'],
-    sleep: ['M19 64 12 80M101 64l7 16', '<path d="M39 55q7 7 14 0M67 55q7 7 14 0" fill="none" stroke="#10302A" stroke-width="3.6" stroke-linecap="round"/><ellipse cx="60" cy="71" rx="3.6" ry="4.4" fill="#10302A"/><path d="M96 8h10l-10 11h10M108 24h6l-6 7h6" fill="none" stroke="#DE9A00" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>']
+  // 小玛, the mascot: a chibi study buddy with a red beret, a chestnut bob, a yellow dress and a pale scarf.
+  // The same head and body in every mood; only the arms, the face and a prop or two change.
+  var MA_INK = '#5A2F1C', MA_SKIN = '#FFDFC4', MA_RED = '#E8362D', MA_SUN = '#FFC933';
+  // every shape lives in one group that defaults to a thin chestnut outline; maP is a stroke with its own width / colour
+  function maP(d, w, stroke, more) { return '<path d="' + d + '" stroke-width="' + w + '"' + (stroke ? ' stroke="' + stroke + '"' : '') + (more || '') + '/>'; }
+  // an arm is a fat outlined stroke with a rounder hand at its end. d: the arm, h: the hand as "Mx yh.01"
+  function maArm(d, h) { return maP(d, 13) + maP(h, 17) + maP(d, 8, MA_SKIN) + maP(h, 12, MA_SKIN); }
+  // the face is drawn inside one dark stroke group: eyes are short fat strokes with a white glint
+  function maEyes(y, dx) { return maP('M45 ' + y + 'v2M75 ' + y + 'v2', 10) + maP('M' + (46.6 + (dx || 0)) + ' ' + (y - 1.5) + 'h.01m30 0h.01', 3.8, '#fff'); }
+  function maMouth(d) { return '<path d="' + d + '" fill="#C8302A"/>'; }
+  function maSun(d, w, fill) { return maP(d, w, MA_SUN, fill ? ' fill="' + MA_SUN + '"' : ''); }
+  var MA = {   // [arms behind the body, face, arms and props in front]
+    cheer: [maArm('M48 97 19 76M72 97l29-21', 'M16 73h.01M104 73h.01'), maEyes(67) + maMouth('M51 76h18q-1 10-9 10t-9-10z'), ''],
+    console: [maArm('M48 97 33 108M72 97l28-9', 'M31 110h.01M104 86h.01'), '<path d="M37 58l11-3M83 58l-11-3"/>' + maEyes(69) + '<path d="M54 80q6 4 12 0"/>', maSun('M109 67q-5-7 0-7 3 0 3 3 0-3 3-3 5 0 0 7l-3 3z', 2, 1)],
+    celebrate: [maArm('M48 97 20 64M72 97l28-33', 'M17 60h.01M103 60h.01'), maP('M38 70q7-10 14 0M68 70q7-10 14 0', 3.8) + maMouth('M49 75h22q-1 13-11 13T49 75z'), maSun('M9 34l3 6 6 1-5 4 2 6-6-4-5 4 2-6-5-4 6-1zM112 32v10M107 37h10', 3, 1)],
+    neutral: [maArm('M48 97 34 108M72 97l14 11', 'M32 110h.01M88 110h.01'), maEyes(67) + '<path d="M53 78q7 6 14 0"/>', ''],
+    think: ['', '<path d="M67 56q7-5 14-1M55 80h8"/>' + maEyes(65, 1.6), maArm('M48 97 34 108M76 101q13 1 7-9', 'M32 110h.01M81 88h.01') + maSun('M101 52h.01M108 41h.01', 6) + maSun('M112 24h.01', 12)],
+    sleep: [maArm('M48 97 35 108M72 97l13 11', 'M33 110h.01M87 110h.01'), '<path d="M38 68q7 6 14 0M68 68q7 6 14 0"/>' + maP('M60 79v1', 6), maSun('M96 36h10l-10 11h10M109 20h6l-6 7h6', 3.4)]
   };
-  function six(mood, size, cls) {
-    var m = SIX[mood] || SIX.neutral;
-    return '<svg class="six' + (cls ? ' ' + cls : '') + '" viewBox="0 0 120 120"' + (size ? ' width="' + size + '" height="' + size + '"' : '') + ' aria-hidden="true" data-mood="' + (SIX[mood] ? mood : 'neutral') + '">' +
-      '<path d="' + m[0] + '" fill="none" stroke="#DE9A00" stroke-width="9" stroke-linecap="round"/>' + SIX_BODY + m[1] + '</svg>';
+  var MA_HAIR = '<path d="M25 62C25 28 95 28 95 62c0 12 3 21-5 26H30c-8-5-5-14-5-26z" fill="' + MA_INK + '"/>',
+    MA_BODY = maP('M53 113v4M67 113v4', 7) + '<path d="M49 90l-11 22q22 6 44 0L71 90z" fill="' + MA_SUN + '"/>',
+    MA_HEAD = '<ellipse cx="60" cy="64" rx="32" ry="27" fill="' + MA_SKIN + '"/><path d="M29 59q4-19 31-19t31 19q-16 0-25-12-11 13-37 12z" fill="' + MA_INK + '"/>' + maP('M34 77h4M82 77h4', 6.5, '#FF9E9E'),
+    MA_SCARF = '<path d="M42 89q18 9 36 0l1 7q-19 10-38 0zM64 99l9 9-12 1z" fill="#FFF4DC" stroke="#0B7A52"/>';
+  // the hat sits on a thin pale rim so that red still separates from a red panel
+  function maHat(d, more) { return maP(d, 6.4, '#FFEFE2') + '<g stroke="#A81F1A">' + more + '<path d="' + d + '" fill="' + MA_RED + '"/></g>'; }
+  var MA_HAT = {
+    beret: maHat('M23 48Q10 25 48 16q42-9 50 16 3 15-10 14-33-8-65 2z', maP('M62 15l3-8', 4)) + maP('M33 30q9-7 21-8', 4, '#FF8E7E'),
+    phrygian: maHat('M25 51Q21 22 52 16q12-9 26-6 12 4 8 14-4 6-10 2 12 9 14 25Q58 39 25 51z', '') + maP('M52 16q13 2 24 10', 2.6, '#A81F1A')
+  };
+  // six(mood, size, cls, opt): the full figure, or just her head (bigger eyes and mouth) below 36px or with opt.mini.
+  // opt.cap = 'phrygian' swaps the beret for a red cap, a one-off costume for a passed mock exam.
+  function six(mood, size, cls, opt) {
+    var m = MA[mood] ? mood : 'neutral', mini = opt && opt.mini || size > 0 && size < 36, hat = MA_HAT[opt && opt.cap] || MA_HAT.beret;
+    return '<svg class="six' + (mini ? ' mini' : '') + (cls ? ' ' + cls : '') + '" viewBox="' + (mini ? '9 0 98 98' : '0 0 120 120') + '"' + (size ? ' width="' + size + '" height="' + size + '"' : '') + ' aria-hidden="true" data-mood="' + m + '">' +
+      '<g fill="none" stroke="' + MA_INK + '" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">' + (mini ? MA_HAIR + MA_HEAD + hat : MA[m][0] + MA_HAIR + MA_BODY + MA_HEAD + MA_SCARF + hat) +
+      '<g stroke="#3B1D10" stroke-width="3"' + (mini ? ' transform="matrix(1.12 0 0 1.12 -7.2 -8.6)"' : '') + '>' + MA[m][1] + '</g>' + (mini ? '' : MA[m][2]) + '</g></svg>';
   }
   function heroDeco() { return hex('deco d1') + hex('deco d2'); }
   var CONFETTI = [['12%', '14%', 18, '#FFC933'], ['24%', '60%', 12, '#fff'], ['8%', '70%', 14, '#FF9FC8'], ['80%', '10%', 14, '#fff'], ['72%', '58%', 18, '#9FD2FF'], ['88%', '72%', 13, '#FFC933']];
@@ -620,7 +636,7 @@
   }
   function payBlock(lead) {
     var d = offerData();
-    return '<section class="card pay"><div class="pay-head">' + six('cheer') + '<h2>' + esc(lead || '解锁全部题目') + '</h2></div>' +
+    return '<section class="card pay"><div class="pay-head">' + six('cheer', 0, '', { mini: true }) + '<h2>' + esc(lead || '解锁全部题目') + '</h2></div>' +
       '<ul class="pay-facts">' +
       '<li><b>' + d.total + '</b><span>' + '道题带讲解' + '</span></li>' +
       (d.cards ? '<li><b>' + d.cards + '</b><span>张考点速记</span></li>' : '') +
@@ -889,7 +905,7 @@
     var proof = [[meta.total, '道题'], [meta.cards, '张速记卡'], [DB.recall.length, '场机经'], [meta.free, '题免费', 'free']]
       .filter(function (p) { return p[0] > 0; });
     return '<main class="wrap wl">' +
-      '<header class="hero wl-hero">' + heroDeco() + six('cheer', 0, 'bob') + '<div class="txt"><p class="say wl-hi"><span>你好，我是小六</span></p>' +
+      '<header class="hero wl-hero">' + heroDeco() + six('cheer', 0, 'bob') + '<div class="txt"><p class="say wl-hi"><span>你好，我是小玛</span></p>' +
       '<h1>法国公民考试，<br>用中文<em>看懂每一题</em></h1>' +
       '<p class="wl-lead"><b class="wl-un">非官方</b>法语原题 + 中文讲解</p></div></header>' +
       '<section class="wl-proof-wrap"><ul class="wl-proof" style="grid-template-columns:repeat(' + proof.length + ',minmax(0,1fr))">' + proof.map(function (p) {
@@ -914,7 +930,7 @@
     var out = '<main class="wrap">' + pagehead('<span class="h-opt">今天</span>' + (began ? '继续闯关' : '开始闯关'), levelChip() + countChip(), 'h-head');
     if (ui.netFail) out += '<p class="note warn">已购买的题库这次没有加载出来，目前只显示免费题。请检查网络后刷新页面。</p>';
     if (ui.revoked) out += '<p class="note warn">这台设备保存的解锁码已失效，请重新输入解锁码或联系卖家。</p>';
-    // today's goal, with 小六 inside the ring
+    // today's goal, with 小玛 inside the ring
     var say = !p.goal ? (unlocked() ? '全部掌握了，去模考吧' : '免费题都掌握了') : (hit ? '今天达标了！' : (p.done ? '再做 <b>' + (p.goal - p.done) + '</b> 题就达标！' : '今天做 <b>' + p.goal + '</b> 题'));
     out += '<section class="hero home">' + heroDeco() + '<div class="hero-top">' +
       hexRing(p.goal ? p.done / p.goal * 100 : 100, six(hit ? 'celebrate' : 'cheer', 0, 'bob'), '今日目标：已完成 ' + p.done + (p.goal ? ' / ' + p.goal : '') + ' 题') +
@@ -1021,7 +1037,7 @@
   function vMe() {
     var out = '<main class="wrap">' + pagehead('我的'), t = S.target ? totals() : null, left = S.target ? daysLeft() : null, d = S.examDate ? dayAt(S.examDate) : null;
     if (unlocked()) {
-      out += '<a class="card me-card done lrow" href="#unlock">' + six('celebrate') + '<span class="grow"><span class="t1">已解锁全部题目</span><span class="t2">查看解锁码</span></span><span class="go">' + icon('go') + '</span></a>';
+      out += '<a class="card me-card done lrow" href="#unlock">' + six('celebrate', 0, '', { mini: true }) + '<span class="grow"><span class="t1">已解锁全部题目</span><span class="t2">查看解锁码</span></span><span class="go">' + icon('go') + '</span></a>';
     } else out += payBlock(t ? '免费试用中 · 开放 ' + t.have + ' / ' + t.total + ' 题' : '免费试用中');
     out += '<section class="stack"><h2>考试类型</h2><div class="seg n' + levelIds().length + '" role="group" aria-label="准备申请的类型">' + levelIds().map(function (lv) {
       return '<button data-a="target" data-v="' + lv + '" aria-pressed="' + (S.target === lv) + '"><b>' + LEVELS[lv].short + '</b><span lang="fr">' + LEVELS[lv].frs + '</span></button>';
@@ -1109,8 +1125,8 @@
     if (!e) return vExam();
     var pass = e.score >= e.passAt, wrong = e.items.filter(function (it) { return it[1] !== 0; }).length, secs = e.secs || 0;
     var only = !!ui.resOnly && wrong > 0 && wrong < e.items.length;
-    // the moment: 小六 celebrates or consoles, the score, the pass mark
-    var out = '<main class="wrap">' + topbar('成绩', 'exam') + '<section class="hero res-hero ' + (pass ? 'pass' : 'plain fail') + '">' + (pass ? heroDeco() + confetti() : '') + six(pass ? 'celebrate' : 'console', 0, 'bob') +
+    // the moment: 小玛 celebrates (in a red cap, just this once) or consoles, the score, the pass mark
+    var out = '<main class="wrap">' + topbar('成绩', 'exam') + '<section class="hero res-hero ' + (pass ? 'pass' : 'plain fail') + '">' + (pass ? heroDeco() + confetti() : '') + six(pass ? 'celebrate' : 'console', 0, 'bob', pass ? { cap: 'phrygian' } : null) +
       '<p class="verdict-line ' + (pass ? 'pass' : 'fail') + '">' + (pass ? '通过！' : '还没过，差 <b>' + (e.passAt - e.score) + '</b> 题') + '</p>' +
       '<div class="big" aria-label="答对 ' + e.score + ' / ' + e.n + ' 题">' + e.score + '<small> / ' + e.n + '</small></div>' +
       '<div class="scale' + (pass ? ' pass' : '') + '"><div class="track"><i style="width:' + (e.score / e.n * 100) + '%"></i></div>' +
@@ -1630,7 +1646,7 @@
       }).join('') + '</div>';
     }
     if (!f.list.length) {
-      return '<div class="note fd-none">' + six('sleep') + '<p>' + (f.dep ? esc(f.dep + (DEPTS[f.dep] ? ' ' + DEPTS[f.dep] : '')) + ' 省' : '“' + esc(ui.cq) + '”') + '在这份名单里没有考场。试试邻近的省号，或点“用我的位置”；另一家机构的考场见下面的说明。</p></div>';
+      return '<div class="note fd-none">' + six('sleep', 0, '', { mini: true }) + '<p>' + (f.dep ? esc(f.dep + (DEPTS[f.dep] ? ' ' + DEPTS[f.dep] : '')) + ' 省' : '“' + esc(ui.cq) + '”') + '在这份名单里没有考场。试试邻近的省号，或点“用我的位置”；另一家机构的考场见下面的说明。</p></div>';
     }
     var max = ui.cmore ? f.list.length : 8, shown = f.list.slice(0, max);
     var head = (f.q ? '找到 <b class="num">' + f.list.length + '</b> 个考场' : '离你最近的考场') + (ui.geo && f.q ? '，按距离排列' : '');

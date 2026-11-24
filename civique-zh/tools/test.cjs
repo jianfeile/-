@@ -1439,6 +1439,43 @@ if (CODE) {
 
   // (end of: registration, self-check, about, payment states)
 
+  // ---- reading French aloud: a French voice is chosen, never the phone's default one
+  console.log('speech');
+  {
+    const fakeSpeech = (voices) => `(() => { const said = []; window.__said = said;
+      class U { constructor(t) { this.text = t; this.lang = ''; this.voice = null; this.rate = 1; } }
+      window.SpeechSynthesisUtterance = U;
+      const synth = { getVoices: () => ${JSON.stringify(voices)}, cancel() {}, speak(u) { said.push({ text: u.text, lang: u.lang, voice: u.voice && u.voice.name }); }, addEventListener() {} };
+      Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true }); })();`;
+    ({ ctx, page } = await fresh());
+    await ctx.addInitScript(fakeSpeech([{ name: '婷婷', lang: 'zh-CN', localService: true }, { name: 'Samantha', lang: 'en-US', localService: true }, { name: 'Amélie', lang: 'fr-CA', localService: true }, { name: 'Thomas', lang: 'fr-FR', localService: true }]));
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForSelector('.themes');
+    await page.locator('[data-a="continue"]').click();
+    await page.waitForSelector('[data-a="say"]');
+    await page.locator('[data-a="say"]').first().click();
+    let said = await page.evaluate(() => window.__said);
+    check('listening uses a French voice from France, not the phone\'s default voice', said.length === 1 && said[0].voice === 'Thomas' && said[0].lang === 'fr-FR', JSON.stringify(said));
+    const spoken = await page.evaluate(() => { const out = []; const synth = window.speechSynthesis; const keep = synth.speak; synth.speak = (u) => out.push(u.text);
+      for (const t of ['La Ve République', 'au XIXe siècle', 'Louis XVI', 'Napoléon Ier', 'François Ier', 'le 1er janvier', 'madame X', 'C\'est Victor Hugo']) { const b = document.createElement('button'); b.setAttribute('data-a', 'word'); b.setAttribute('data-v', t); document.body.appendChild(b); b.click(); b.remove(); }
+      synth.speak = keep; return out; });
+    check('roman numerals are read as numbers, ordinary capitals are left alone', spoken.join(' | ') === 'La 5e République | au 19e siècle | Louis 16 | Napoléon 1er | François 1er | le 1er janvier | madame X | C\'est Victor Hugo', spoken.join(' | '));
+    await ctx.close();
+    ({ ctx, page } = await fresh());
+    await ctx.addInitScript(fakeSpeech([{ name: '婷婷', lang: 'zh-CN', localService: true }, { name: 'Samantha', lang: 'en-US', localService: true }]));
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForSelector('.themes');
+    await page.locator('[data-a="continue"]').click();
+    await page.waitForSelector('[data-a="say"]');
+    await page.locator('[data-a="say"]').first().click();
+    await page.waitForSelector('#saynote');
+    said = await page.evaluate(() => window.__said);
+    check('a phone with no French voice says so instead of reading French with another language\'s voice', said.length === 0 && /没有法语语音/.test(await page.locator('#saynote').innerText()));
+    await ctx.close();
+  }
+
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

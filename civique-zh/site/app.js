@@ -446,14 +446,62 @@
 
   // ---------------------------------------------------------------- speech
   var canSpeak = 'speechSynthesis' in window && typeof window.SpeechSynthesisUtterance !== 'undefined';
+  // The phone's own voices do the reading. Saying "this is French" is not enough: many phones (and WeChat's browser)
+  // then read French with the default Chinese or English voice. So a French voice is chosen by name, and when the
+  // phone has none, the user is told instead of hearing nonsense.
+  var frVoice = null, voicesSeen = false;
+  function pickVoice() {
+    if (!canSpeak) return;
+    var list = [];
+    try { list = window.speechSynthesis.getVoices() || []; } catch (e) { list = []; }
+    if (!list.length) return;
+    voicesSeen = true;
+    var best = null, top = -1;
+    for (var i = 0; i < list.length; i++) {
+      var v = list[i], lang = String(v.lang || '').replace('_', '-').toLowerCase();
+      if (lang.indexOf('fr') !== 0) continue;
+      var score = lang === 'fr-fr' ? 30 : lang === 'fr' ? 20 : 10;                      // France first, then other French
+      if (/enhanced|premium|natural|neural|compact/i.test(v.name) && !/compact/i.test(v.name)) score += 6;
+      if (/google|microsoft|amélie|amelie|thomas|audrey|denise|henri|marie/i.test(v.name)) score += 3;
+      if (v.localService) score += 1;                                                    // works without a connection
+      if (score > top) { top = score; best = v; }
+    }
+    frVoice = best;
+  }
+  if (canSpeak) {
+    pickVoice();
+    try { window.speechSynthesis.addEventListener('voiceschanged', pickVoice); } catch (e) { try { window.speechSynthesis.onvoiceschanged = pickVoice; } catch (x) { /* older engines */ } }
+  }
+  var ROMAN = { I: 1, V: 5, X: 10, L: 50, C: 100 };
+  function fromRoman(r) { var n = 0; for (var i = 0; i < r.length; i++) { var a = ROMAN[r[i]], b = ROMAN[r[i + 1]] || 0; n += a < b ? -a : a; } return n; }
+  // what is written for the eye is not always what a voice can read: "Ve République", "XIXe siècle", "Louis XVI"
+  function forVoice(text) {
+    return String(text)
+      .replace(/\b([IVXLC]+)(er|re|e|ème|eme)\b/g, function (m, r, suf) { var n = fromRoman(r); return n > 0 && n < 400 ? n + (suf === 'ème' || suf === 'eme' ? 'e' : suf) : m; })
+      .replace(/\b(Louis|Napoléon|Charles|François|Henri|Philippe|Clovis|Jean|Léon|Pie|Benoît)(-[A-Z][a-zé]+)?\s+([IVXLC]{1,6})\b/g, function (m, name, extra, r) { var n = fromRoman(r); return n > 0 && n < 100 ? name + (extra || '') + ' ' + n : m; })
+      .replace(/[«»]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
   function speak(text) {
     if (!canSpeak) return;
     try {
+      if (!frVoice) pickVoice();
+      if (voicesSeen && !frVoice) { sayNote('这台手机没有法语语音，读不了法语。可以在手机设置里添加“法语”朗读语音，或换用 Safari、Chrome 打开。'); return; }
       window.speechSynthesis.cancel();
-      var u = new window.SpeechSynthesisUtterance(text);
-      u.lang = 'fr-FR'; u.rate = 0.88;
+      var u = new window.SpeechSynthesisUtterance(forVoice(text));
+      u.lang = frVoice ? frVoice.lang : 'fr-FR';
+      if (frVoice) u.voice = frVoice;
+      u.rate = 0.88;
       window.speechSynthesis.speak(u);
     } catch (e) { /* no voice on this device */ }
+  }
+  function sayNote(msg) {
+    try {
+      var box = document.getElementById('saynote');
+      if (!box) { box = document.createElement('div'); box.id = 'saynote'; box.setAttribute('role', 'status'); document.body.appendChild(box); }
+      box.textContent = msg;
+      clearTimeout(sayNote.t);
+      sayNote.t = setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 6000);
+    } catch (e) { /* a note only */ }
   }
   function hush() { if (canSpeak) { try { window.speechSynthesis.cancel(); } catch (e) { /* nothing playing */ } } }
 

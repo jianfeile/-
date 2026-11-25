@@ -69,8 +69,18 @@
   </section>
 
   <section id="t-refs" hidden>
-    <div class="scroll"><table><thead><tr><th>推荐人</th><th class="n">带来的人</th><th class="n">其中已付费</th><th class="n">近 7 天还在用</th></tr></thead><tbody id="rlist"></tbody></table></div>
-    <p class="small">这里按“谁的链接带来了谁”统计，包括还没付费的人。佣金按实际收款算，在“销售和佣金”页。</p>
+    <div class="card">
+      <h3 style="margin-top:0">给一个推广的人生成专属链接</h3>
+      <div class="row"><input id="rname" class="grow" type="text" maxlength="60" placeholder="名字或备注，比如：小丽（朋友圈）" aria-label="名字或备注">
+        <input id="rcode" type="text" maxlength="40" placeholder="代号（可不填，自动生成）" aria-label="代号" style="flex:1 1 150px">
+        <label class="row" style="margin:0" for="rpct">佣金 %</label><input id="rpct" type="number" min="0" max="100" step="1" value="30" style="flex:0 0 80px">
+        <button type="button" id="rnew">生成链接</button></div>
+      <div id="rmade" hidden style="margin-top:10px"><p class="small" style="margin-bottom:4px">把这条链接发给对方，让对方发朋友圈或发给客人：</p>
+        <div class="row"><input id="rlink" class="grow" type="text" readonly aria-label="推荐链接"><button type="button" class="plain" id="rcopy">复制</button></div></div>
+      <p class="small">自己发帖、平时宣传，直接用官网 <b id="rhome"></b>，不用带代号。代号只能用英文字母、数字、短横线。</p>
+    </div>
+    <div class="scroll"><table><thead><tr><th>推荐人</th><th>链接</th><th class="n">带来的人</th><th class="n">已付费</th><th class="n">近 7 天在用</th><th class="n">订单</th><th class="n">收款</th><th class="n">佣金</th><th></th></tr></thead><tbody id="rlist"></tbody></table></div>
+    <p class="small">“带来的人”包括还没付费的。“订单、收款”直接取自 Stripe，没有扣手续费和退款；佣金按每个人自己的比例算。没有登记过的代号（有人自己在网址里写的）也会列出来，标“未登记”。</p>
   </section>
 
   <section id="t-codes" hidden>

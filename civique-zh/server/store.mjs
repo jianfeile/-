@@ -10,7 +10,9 @@ const SCHEMA = [
   // codes the seller made by hand (one device each), and any code the seller cancelled
   // the devices on which a code issued after a payment was used (a purchase is for one person: a few devices, not a crowd)
   `CREATE TABLE IF NOT EXISTS code_devices (code TEXT, device TEXT, t INTEGER, PRIMARY KEY (code, device))`,
-  `CREATE TABLE IF NOT EXISTS auth_fail (t INTEGER)`,       // wrong tries at the admin door
+  `CREATE TABLE IF NOT EXISTS auth_fail (t INTEGER)`,
+  // the people the seller gave a link to: kaocivique.com/?r=<code>
+  `CREATE TABLE IF NOT EXISTS refs (code TEXT PRIMARY KEY, name TEXT, pct INTEGER, created INTEGER)`,       // wrong tries at the admin door
   `CREATE TABLE IF NOT EXISTS codes (code TEXT PRIMARY KEY, note TEXT, created INTEGER, used_at INTEGER, used_by TEXT, revoked INTEGER DEFAULT 0)`,
 ];
 let ready = null;

@@ -143,6 +143,30 @@ export async function admin(request, env) {
     await d.batch([d.prepare('DELETE FROM days WHERE user = ?1').bind(id), d.prepare('DELETE FROM users WHERE id = ?1').bind(id)]);
     return json({ ok: true });
   }
+  if (op === 'refs') {
+    const rows = (await d.prepare('SELECT code, name, pct, created FROM refs ORDER BY created DESC LIMIT 2000').all()).results || [];
+    return json({ ok: true, refs: rows });
+  }
+  if (op === 'ref-set') {          // a new referrer (the code is made up here unless one is given), or new details for one
+    const name = clip(body.name, 60).trim(), pct = Math.max(0, Math.min(100, Math.round(Number(body.pct)) || 0));
+    if (!name) return json({ error: 'bad_request' }, 400);
+    let code = typeof body.code === 'string' ? body.code.trim() : '';
+    if (code && !refOk(code)) return json({ error: 'bad_code' }, 400);
+    if (!code) {
+      const A = 'abcdefghjkmnpqrstuvwxyz23456789';
+      for (let tries = 0; tries < 20 && !code; tries++) {
+        const c = Array.from(crypto.getRandomValues(new Uint8Array(5)), (b) => A[b % A.length]).join('');
+        if (!(await d.prepare('SELECT 1 AS x FROM refs WHERE code = ?1').bind(c).first())) code = c;
+      }
+      if (!code) return json({ error: 'server' }, 500);
+    } else if (body.fresh && await d.prepare('SELECT 1 AS x FROM refs WHERE code = ?1').bind(code).first()) return json({ error: 'taken' }, 409);
+    await d.prepare('INSERT INTO refs (code, name, pct, created) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(code) DO UPDATE SET name = excluded.name, pct = excluded.pct').bind(code, name, pct, Date.now()).run();
+    return json({ ok: true, code });
+  }
+  if (op === 'ref-del') {          // the link keeps working and past visits stay counted; the name just leaves the list
+    await d.prepare('DELETE FROM refs WHERE code = ?1').bind(String(body.code || '')).run();
+    return json({ ok: true });
+  }
   if (op === 'codes') {
     const rows = (await d.prepare('SELECT code, note, created, used_at, used_by, revoked FROM codes ORDER BY created DESC LIMIT 2000').all()).results || [];
     return json({ ok: true, codes: rows.map((r) => Object.assign(r, { code: fmtCode(r.code), revoked: !!r.revoked })) });

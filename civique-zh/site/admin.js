@@ -65,12 +65,50 @@
     if (!list.length) { var tr = el('tr'); var c = td(USERS.length ? '没有符合的用户' : '还没有人用过'); c.colSpan = 10; tr.appendChild(c); $('ulist').appendChild(tr); }
     drawRefs();
   }
+  var REFS = [], SALES = null;
+  function money(c) { return (c / 100).toFixed(2).replace('.', ',') + ' €'; }
+  function linkOf(code) { return location.origin + '/?r=' + code; }
+  function copy(text, btn) {
+    try { navigator.clipboard.writeText(text).then(function () { btn.textContent = '已复制'; setTimeout(function () { btn.textContent = '复制'; }, 1500); }, function () { say('复制不了，请手动选中链接。'); }); }
+    catch (e) { say('复制不了，请手动选中链接。'); }
+  }
   function drawRefs() {
     var by = {}, week = Date.now() - 7 * 864e5;
-    USERS.forEach(function (u) { var k = u.ref || ''; var g = by[k] || (by[k] = { ref: k, n: 0, paid: 0, live: 0 }); g.n++; if (isPaid(u)) g.paid++; if (u.last_seen > week) g.live++; });
-    var list = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return (a.ref === '') - (b.ref === '') || b.n - a.n; });
+    function g(k) { return by[k] || (by[k] = { ref: k, n: 0, paid: 0, live: 0, orders: 0, amount: 0 }); }
+    REFS.forEach(function (r) { var x = g(r.code); x.name = r.name; x.pct = r.pct; x.known = true; x.created = r.created; });
+    USERS.forEach(function (u) { var x = g(u.ref || ''); x.n++; if (isPaid(u)) x.paid++; if (u.last_seen > week) x.live++; });
+    (SALES || []).forEach(function (s) { var x = g(s.ref || ''); x.orders++; x.amount += s.amount; });
+    var list = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return (a.ref === '') - (b.ref === '') || (!!b.known - !!a.known) || (b.created || 0) - (a.created || 0) || b.n - a.n; });
     $('rlist').innerHTML = '';
-    list.forEach(function (g) { var tr = el('tr'); tr.appendChild(td(g.ref || '（没有推荐人）')); tr.appendChild(td(g.n, 'n')); tr.appendChild(td(g.paid, 'n')); tr.appendChild(td(g.live, 'n')); $('rlist').appendChild(tr); });
+    list.forEach(function (x) {
+      var tr = el('tr'), name = td('');
+      if (x.ref === '') name.textContent = '官网直接来的（没有推荐人）';
+      else { name.appendChild(el('b', { text: x.name || x.ref })); if (!x.known) name.appendChild(el('span', { cls: 'tag', text: '未登记' })); name.appendChild(el('div', { cls: 'small', text: '代号 ' + x.ref })); }
+      tr.appendChild(name);
+      var link = td('');
+      if (x.ref) { var b = el('button', { type: 'button', cls: 'plain', text: '复制' }); b.style.padding = '3px 9px'; b.addEventListener('click', function () { copy(linkOf(x.ref), b); }); link.appendChild(b); }
+      tr.appendChild(link);
+      tr.appendChild(td(x.n, 'n')); tr.appendChild(td(x.paid, 'n')); tr.appendChild(td(x.live, 'n'));
+      tr.appendChild(td(SALES ? x.orders : '—', 'n')); tr.appendChild(td(SALES ? money(x.amount) : '—', 'n'));
+      tr.appendChild(td(SALES && x.known ? money(Math.round(x.amount * (x.pct || 0) / 100)) + '（' + (x.pct || 0) + '%）' : '—', 'n'));
+      var ops = td('');
+      if (x.known) {
+        var del = el('button', { type: 'button', cls: 'danger', text: '移除' }); del.style.padding = '3px 9px';
+        del.addEventListener('click', function () {
+          if (del.getAttribute('data-sure') !== '1') { del.setAttribute('data-sure', '1'); del.textContent = '确认移除'; return; }
+          api('ref-del', { code: x.ref }).then(function (r) { if (!r.ok) return say(why(r.error)); say('已从名单移除。这条链接带来的人和订单仍然记着。', true); loadRefs(); });
+        });
+        ops.appendChild(del);
+      }
+      tr.appendChild(ops); $('rlist').appendChild(tr);
+    });
+  }
+  function loadRefs() {
+    return api('refs').then(function (d) { if (d.ok) REFS = d.refs || []; drawRefs(); });
+  }
+  function loadSales() {
+    return fetch('/api/sales', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: TOKEN }) })
+      .then(function (r) { return r.json(); }).then(function (d) { if (d && d.ok) { SALES = d.sales || []; drawRefs(); } }, function () { /* the list still shows visitors */ });
   }
   function openUser(id) {
     var box = $('udetail');
@@ -233,6 +271,22 @@
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  $('rhome').textContent = location.origin;
+  $('rnew').addEventListener('click', function () {
+    var name = $('rname').value.trim(), code = $('rcode').value.trim();
+    if (!name) return say('先填名字或备注，方便你以后认出是谁。');
+    if (code && !/^[A-Za-z0-9_-]{1,40}$/.test(code)) return say('代号只能用英文字母、数字、短横线，不能有空格和中文。');
+    $('rnew').disabled = true;
+    api('ref-set', { name: name, code: code, pct: Number($('rpct').value), fresh: true }).then(function (d) {
+      $('rnew').disabled = false;
+      if (!d.ok) return say(d.error === 'taken' ? '这个代号已经给别人用了，换一个。' : why(d.error));
+      $('rlink').value = linkOf(d.code); $('rmade').hidden = false;
+      say('链接生成好了。', true); $('rname').value = ''; $('rcode').value = '';
+      loadRefs();
+    });
+  });
+  $('rcopy').addEventListener('click', function () { copy($('rlink').value, $('rcopy')); });
+
   // ---------------------------------------------------------------- unlock codes
   function loadCodes() {
     return api('codes').then(function (d) {
@@ -285,7 +339,7 @@
     return loadUsers().then(function (d) {
       if (!d.ok) { if (!$('main').hidden || TOKEN) signOut(why(d.error)); else say(why(d.error)); return; }
       say(''); $('main').hidden = false; $('f').hidden = true;
-      loadCodes();
+      loadCodes(); loadRefs(); loadSales();
       return loadBank();
     });
   }

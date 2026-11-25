@@ -991,6 +991,7 @@ if (CODE) {
     check('unlock page: one pay button, with the price on it and the terms right above it; the code form is folded until asked for', payBtns.length === 1 && payBtns.every((t) => t.includes(price)) && /一次付款，不是订阅/.test(await page.locator('.offer-terms').innerText()) && (await page.locator('.buy a.btn').first().getAttribute('href')).startsWith('https://pay.example.com/x') && !(await page.locator('#code').isVisible()), payBtns.join(' | '));
     await page.locator('#have-code summary').click();
     check('unlock page: "I already have a code" opens the form', await page.locator('#code').isVisible());
+    check('unlock page: the terms of sale are one tap away and say that access is immediate with no withdrawal', await page.locator('.offer-after a[href="conditions.html"]').count() === 1 && /L221-28/.test(fs.readFileSync(path.join(SITE, 'conditions.html'), 'utf8')));
     check('no referral link, no referral name on the pay button', !/client_reference_id/.test(await page.locator('.buy a.btn').first().getAttribute('href')));
     await page.goto(base + '?r=lili-01#unlock');
     await page.reload();

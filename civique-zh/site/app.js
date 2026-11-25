@@ -2033,7 +2033,8 @@
         '<li>自动回到本站，全部题目马上解锁。</li>' +
         '<li>同时给你一个解锁码，换手机或换浏览器时输入。</li>' +
         (CFG.api ? '<li>解锁码找不到了，可以用付款时的邮箱找回。</li>' : '') + '</ol>' +
-        '<p>不会自动续费，题目更正和补充不再收费。付款页面由 Stripe 提供，本站不接触你的卡号。</p></div></details>' +
+        '<p>不会自动续费，题目更正和补充不再收费。付款页面由 Stripe 提供，本站不接触你的卡号。</p>' +
+        '<p>这是付款后立即开通的数字内容，开通后不能无理由退款，所以请先免费试用。详见<a href="conditions.html" target="_blank" rel="noopener">购买条款</a>。</p></div></details>' +
         '<details class="disc flat" id="ref-box"' + (at === 'ref' ? ' open' : '') + '><summary>朋友推荐来的？</summary><div class="in">' +
         (refOk(lsGet(REF_KEY)) ? '<p class="small">推荐码已记下：<b>' + esc(lsGet(REF_KEY)) + '</b>。价格不变，只是让推荐你的朋友得到感谢。要换的话重新填。</p>' : '<p class="small">填朋友给你的推荐码再付款。价格不变，只是让推荐你的朋友得到感谢。没有就不用填。</p>') +
         '<form id="refform" class="stack"><div class="field"><input id="ref" class="plain" name="ref" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="推荐码" aria-label="推荐码" maxlength="40"><button class="btn" type="submit">确定</button></div>' + msg('ref') + '</form></div></details>'

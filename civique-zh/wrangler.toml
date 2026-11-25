@@ -2,3 +2,9 @@
 name = "civique-zh"
 pages_build_output_dir = "site"
 compatibility_date = "2026-01-01"
+
+# who uses the site, their progress and corrections to the bank (server/store.mjs)
+[[d1_databases]]
+binding = "DB"
+database_name = "civique"
+database_id = "8a751278-2276-4e85-a51c-232276e5cf28"

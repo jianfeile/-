@@ -107,13 +107,14 @@
     });
   }
   // a poster and a QR code for one link
-  var POSTER = { cv: null, qr: null, file: 'kaocivique' };
+  var POSTER = { cv: null, guide: null, qr: null, file: 'kaocivique' };
   function showPoster(link, who, code) {
     $('pbox').hidden = false; $('ptitle').textContent = (who ? who + ' 的' : '官网的') + '海报和二维码'; $('plink').textContent = link;
     POSTER.file = 'kaocivique' + (code ? '-' + code : '');
     POSTER.qr = window.Poster.qrOnly(link, 1024); $('qimg').src = POSTER.qr.toDataURL('image/png');
-    $('pimg').removeAttribute('src');
+    $('pimg').removeAttribute('src'); $('gimg').removeAttribute('src');
     window.Poster.poster({ link: link, total: QS.length || 617 }).then(function (cv) { POSTER.cv = cv; $('pimg').src = cv.toDataURL('image/png'); });
+    window.Poster.guide({ link: link }).then(function (cv) { POSTER.guide = cv; $('gimg').src = cv.toDataURL('image/png'); });
     $('pbox').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function download(cv, name) {
@@ -310,6 +311,7 @@
   $('phome').addEventListener('click', function () { showPoster(location.origin + '/', '', ''); });
   $('pclose').addEventListener('click', function () { $('pbox').hidden = true; });
   $('pdl').addEventListener('click', function () { download(POSTER.cv, POSTER.file + '-poster.png'); });
+  $('gdl').addEventListener('click', function () { download(POSTER.guide, POSTER.file + '-desktop-guide.png'); });
   $('qdl').addEventListener('click', function () { download(POSTER.qr, POSTER.file + '-qr.png'); });
 
   // ---------------------------------------------------------------- unlock codes

@@ -1497,3 +1497,7 @@ button.voc:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--c); }
 .acct { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: -4px 2px; }
 .acct b { overflow-wrap: anywhere; }
 .acct .linkbtn { padding: 6px 4px; }
+
+/* ==== the "put it on the home screen" steps ==== */
+.a2hs { display: flex; flex-direction: column; gap: 10px; padding-left: 22px; margin: 4px 0 14px; font-size: 15.5px; line-height: 1.6; }
+.a2hs li { list-style: decimal; }

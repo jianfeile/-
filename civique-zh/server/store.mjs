@@ -45,9 +45,9 @@ export async function rememberBuyer(env, code, info) {
   } catch { /* the database is optional */ }
 }
 
-export function deviceLimit(env) { const n = Math.floor(Number(env && env.DEVICE_LIMIT)); return n >= 1 && n <= 20 ? n : 3; }
+export function deviceLimit(env) { const n = Math.floor(Number(env && env.DEVICE_LIMIT)); return n >= 1 && n <= 20 ? n : 5; }
 // A code in the seller's list works on one device: the first that uses it. A code issued after a payment works on a few
-// (DEVICE_LIMIT, 3 unless set). 'ok' | 'used' | 'limit' | 'revoked'. A request that names no device is not counted.
+// (DEVICE_LIMIT, 5 unless set: on one phone, WeChat, the browser and the home-screen icon each count). 'ok' | 'used' | 'limit' | 'revoked'. A request that names no device is not counted.
 export async function codeGate(env, code, device) {
   try {
     const d = await ensure(env);

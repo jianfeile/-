@@ -1179,6 +1179,9 @@ if (CODE) {
     const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('#pdl').click()]);
     const [dq] = await Promise.all([page.waitForEvent('download'), page.locator('#qdl').click()]);
     check('poster: poster and QR code download as pictures named after the referrer', /^kaocivique-[a-z2-9]{5}-poster\.png$/.test(dl.suggestedFilename()) && /^kaocivique-[a-z2-9]{5}-qr\.png$/.test(dq.suggestedFilename()), dl.suggestedFilename() + ' ' + dq.suggestedFilename());
+    await page.waitForFunction(() => (document.getElementById('gimg').getAttribute('src') || '').startsWith('data:image/png'));
+    const [dg] = await Promise.all([page.waitForEvent('download'), page.locator('#gdl').click()]);
+    check('poster: the "put it on the home screen" how-to comes with it', /-desktop-guide\.png$/.test(dg.suggestedFilename()));
     await page.locator('#phome').click();
     await page.waitForFunction(() => /官网的海报/.test(document.getElementById('ptitle').textContent));
     check('poster: the plain site has its own poster, with no referrer in the link', /\/$/.test(await page.locator('#plink').innerText()) && !/r=/.test(await page.locator('#plink').innerText()) && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
@@ -1322,7 +1325,7 @@ if (CODE) {
     check('authenticator: the sales report asks for it too', (await (await salesCore.handle(new Request('http://x/api/sales', { method: 'POST', body: JSON.stringify({ key: ENV.ADMIN_KEY }) }), E2, stripeStandIn)).json()).error === 'otp_required'
       && (await (await salesCore.handle(new Request('http://x/api/sales', { method: 'POST', body: JSON.stringify({ token: login.token }) }), E2, stripeStandIn)).json()).ok === true);
 
-    const E3 = Object.assign({}, ENV, { DEVICE_LIMIT: undefined });
+    const E3 = Object.assign({}, ENV, { DEVICE_LIMIT: '3' });
     {
       const E4 = Object.assign({}, ENV, { ADMIN_TOTP: SECRET, ADMIN_KEY: 'short-pw-1', DB: d1() });
       check('authenticator: with it, a shorter password is accepted; without it, a short password switches the pages off', (await (await call({ key: 'short-pw-1', otp: now, op: 'login' }, E4)).json()).ok === true
@@ -1360,6 +1363,23 @@ if (CODE) {
     await page.goto(base + 'sales.html');
     await page.waitForSelector('#out:not([hidden])');
     check('sales page: opens with the same pass', true);
+    await ctx.close();
+  }
+
+  // ---- how to put the site on the phone's home screen
+  console.log('home screen');
+  {
+    ({ ctx, page } = await fresh({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 MicroMessenger/8.0.44' }));
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForSelector('.themes');
+    await page.goto(base + '#me');
+    await page.locator('[data-a="a2hs"]').click();
+    await page.waitForSelector('.sheet .a2hs');
+    const steps = await page.locator('.sheet .a2hs li').allInnerTexts();
+    check('home screen: inside WeChat on an iPhone, the steps start with leaving WeChat, then Safari\'s share button', steps.length === 4 && /你现在在微信里/.test(steps[0]) && /苹果手机/.test(steps[1]) && /添加到主屏幕/.test(steps[1]) && /重新登录/.test(steps[3]) && await noOverflow(page), steps.join(' | '));
+    await page.locator('.sheet [data-a="close"]').click();
+    check('home screen: the sheet closes', await page.locator('.sheet').count() === 0);
     await ctx.close();
   }
 

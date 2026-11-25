@@ -723,6 +723,7 @@
     mistakes: '<rect x="4.500" y="3.500" width="15" height="17" rx="3"/><path d="m9.500 9.500 5 5m0-5-5 5"/>',
     words: '<path d="M4 6h9M8.500 3.500V6M11.500 6c-.7 3.300-3 6-6.500 7.500M6.500 9.500c1 2 2.800 3.500 5 4.300"/><path d="m13 20.500 3.500-9 3.500 9M14.200 17.500h4.600"/>',
     about: '<circle cx="12" cy="12" r="8.700"/><path d="M12 11v5.500M12 7.500v.2"/>',
+    phone: '<rect x="6.500" y="2.500" width="11" height="19" rx="2.500"/><path d="M10.500 18h3"/>',
     check: '<circle cx="12" cy="12" r="8.700"/><path d="M9.600 9.700a2.500 2.500 0 1 1 3.700 2.200c-.9.500-1.300 1-1.300 1.900M12 16.800v.2"/>',
     recall: '<path d="M4.500 5h15v11h-7.500L7.500 20v-4h-3z"/><path d="M8.500 9h7M8.500 12.200h4.500"/>',
     register: '<path d="M12 21s6.500-5.800 6.500-11a6.500 6.500 0 0 0-13 0c0 5.200 6.500 11 6.500 11z"/><circle cx="12" cy="10" r="2.300"/>',
@@ -1237,6 +1238,7 @@
     return out + '</main>' + tabs('practice');
   }
   // 我的: unlock, exam type, exam date, the pages about the real exam, settings
+  function standalone() { try { return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)); } catch (e) { return false; } }
   function vMe() {
     var out = '<main class="wrap">' + pagehead('我的'), t = S.target ? totals() : null, left = S.target ? daysLeft() : null, d = S.examDate ? dayAt(S.examDate) : null;
     if (unlocked()) {
@@ -1256,6 +1258,7 @@
       (S.target ? row('data-a="plan-edit"', 'date', '考试日期', d ? (d.getMonth() + 1) + '月' + d.getDate() + '日' + (left > 0 ? ' · 还有 ' + left + ' 天' : (left === 0 ? ' · 就是今天' : ' · 已经过了')) : '还没设') : '') +
       row('href="#check"', 'check', '我要不要考？', '30 秒自测') +
       row('href="#register"', 'register', '报名考试', '步骤和考场查询') +
+      (standalone() ? '' : row('data-a="a2hs"', 'phone', '放到手机桌面', '像 App 一样，一点就开')) +
       row('href="#about"', 'about', '说明', '关于考试和这个题库') +
       row('data-a="reset"', 'reset', '清空练习记录', '') + '</div>';
     return out + bankLine() + disclaimer() + '</main>' + tabs('me');
@@ -2221,6 +2224,16 @@
     target: function (v) { if (!LEVELS[v]) return; var first = !S.target; if (S.target !== v) { S.target = v; S.sess = null; } save(); render(first); },   // first choice: the welcome screen was scrolled, the home screen starts at the top
     goto: function (v) { ui.modal = null; go(v); },
     close: function () { ui.modal = null; render(); },
+    // how to put the site on the phone's home screen; the steps depend on the phone and on being inside WeChat or not
+    a2hs: function () {
+      var ua = navigator.userAgent || '', wx = /MicroMessenger/i.test(ua), ios = /iPhone|iPad|iPod/i.test(ua);
+      var first = '<li>' + (wx ? '<b>你现在在微信里，要先换到浏览器：</b>' : '如果是在微信里打开的：') + '点右上角 <b>···</b>，选<b>“在默认浏览器中打开”</b>。</li>';
+      var iosStep = '<li><b>苹果手机（Safari）：</b>点底部中间的<b>分享按钮</b>（方框加向上箭头），往下找<b>“添加到主屏幕”</b>，点“添加”。</li>';
+      var andStep = '<li><b>安卓手机（Chrome 等浏览器）：</b>点右上角 <b>⋮</b>，选<b>“添加到主屏幕”</b>或“安装应用”。</li>';
+      ui.modal = { title: '放到手机桌面', body: '<ol class="a2hs">' + first + (ios ? iosStep + andStep : andStep + iosStep) +
+        '<li>以后从桌面图标打开。<b>第一次要重新登录</b>；买过的，填付款时的邮箱就自动解锁。</li></ol>', actions: [{ a: 'close', label: '知道了' }] };
+      render();
+    },
     print: function () { window.print(); },
     fig: function (v) { openFig(v); },
     locked: function () {

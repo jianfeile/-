@@ -14,7 +14,7 @@
 // optional:
 //   PAYMENT_LINK  plink_... id: only payments made through this link count
 //   REVOKED       unlock codes that no longer work, separated by commas or spaces
-//   DEVICE_LIMIT  on how many devices one purchase may be unlocked (3 unless set; needs DB)
+//   DEVICE_LIMIT  on how many devices one purchase may be unlocked (5 unless set; needs DB)
 //   ALLOW_TEST    "1" to accept Stripe test-mode payments (never on the public site)
 //   DB            a D1 database binding: buyers are then listed in the admin page (see store.mjs)
 //

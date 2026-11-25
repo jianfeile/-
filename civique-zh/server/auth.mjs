@@ -1,10 +1,12 @@
 // Who may use the seller's pages: the admin password (ADMIN_KEY) and, when ADMIN_TOTP is set, a six-digit code from an
 // authenticator app (Google Authenticator and the like). A successful sign-in gives a token good for twelve hours, so the
 // code is asked once and not on every click.
-//   ADMIN_KEY    a long password (16 characters or more)
+//   ADMIN_KEY    the password: 16 characters or more, or 8 or more when ADMIN_TOTP is set
+// With the database bound, eight wrong tries within fifteen minutes close the door for the rest of those fifteen minutes.
 //   ADMIN_TOTP   optional: the authenticator secret, base32 (the same text that is typed into the app)
 const enc = new TextEncoder();
-const HOURS = 12;
+const HOURS = 12, TRIES = 8, WINDOW = 15 * 60000;
+import { ensure } from './store.mjs';
 
 async function digestSame(a, b) {
   const [x, y] = await Promise.all([a, b].map(async (s) => new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(String(s))))));
@@ -42,21 +44,36 @@ export async function newToken(env, now = Date.now()) {
   const exp = now + HOURS * 3600000;
   return { token: exp + '.' + await sign(env, String(exp)), exp };
 }
-// { ok: true, token?, exp? } or { error: 'not_configured' | 'forbidden' | 'otp_required' | 'bad_otp' | 'expired' }
+// { ok: true, token?, exp? } or { error: 'not_configured' | 'forbidden' | 'otp_required' | 'bad_otp' | 'expired' | 'locked' }
+async function tooMany(env, now) {
+  try {
+    const d = await ensure(env);
+    if (!d) return false;
+    const r = await d.prepare('SELECT COUNT(*) AS n FROM auth_fail WHERE t > ?1').bind(now - WINDOW).first();
+    return ((r || {}).n || 0) >= TRIES;
+  } catch { return false; }
+}
+async function failed(env, now) {
+  try {
+    const d = await ensure(env);
+    if (d) await d.batch([d.prepare('INSERT INTO auth_fail (t) VALUES (?1)').bind(now), d.prepare('DELETE FROM auth_fail WHERE t < ?1').bind(now - 24 * 3600000)]);
+  } catch { /* the database is optional */ }
+}
 export async function authorize(body, env, now = Date.now()) {
-  if (String(env.ADMIN_KEY || '').length < 16) return { error: 'not_configured' };
+  if (String(env.ADMIN_KEY || '').length < (env.ADMIN_TOTP ? 8 : 16)) return { error: 'not_configured' };
   if (body && typeof body.token === 'string' && body.token) {
     const [exp, sig] = body.token.split('.');
     if (!/^\d{13}$/.test(exp || '') || !sig || !(await digestSame(sig, await sign(env, exp)))) return { error: 'forbidden' };
     return Number(exp) > now ? { ok: true } : { error: 'expired' };
   }
-  if (!body || typeof body.key !== 'string' || !(await digestSame(body.key, env.ADMIN_KEY))) return { error: 'forbidden' };
+  if (await tooMany(env, now)) return { error: 'locked' };
+  if (!body || typeof body.key !== 'string' || !(await digestSame(body.key, env.ADMIN_KEY))) { if (body && body.key) await failed(env, now); return { error: 'forbidden' }; }
   if (env.ADMIN_TOTP) {
     const otp = String(body.otp || '').replace(/\s/g, '');
     if (!otp) return { error: 'otp_required' };
     let good = false;
     for (const step of [0, -1, 1]) if (/^\d{6}$/.test(otp) && otp === await totp(env.ADMIN_TOTP, now + step * 30000)) good = true;
-    if (!good) return { error: 'bad_otp' };
+    if (!good) { await failed(env, now); return { error: 'bad_otp' }; }
   }
   return Object.assign({ ok: true }, await newToken(env, now));
 }

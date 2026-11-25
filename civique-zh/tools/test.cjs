@@ -1284,6 +1284,16 @@ if (CODE) {
       && (await (await salesCore.handle(new Request('http://x/api/sales', { method: 'POST', body: JSON.stringify({ token: login.token }) }), E2, stripeStandIn)).json()).ok === true);
 
     const E3 = Object.assign({}, ENV, { DEVICE_LIMIT: undefined });
+    {
+      const E4 = Object.assign({}, ENV, { ADMIN_TOTP: SECRET, ADMIN_KEY: 'short-pw-1', DB: d1() });
+      check('authenticator: with it, a shorter password is accepted; without it, a short password switches the pages off', (await (await call({ key: 'short-pw-1', otp: now, op: 'login' }, E4)).json()).ok === true
+        && (await call({ key: 'short-pw-1', op: 'login' }, Object.assign({}, E4, { ADMIN_TOTP: undefined }))).status === 503);
+      let last = '';
+      for (let i = 0; i < 9; i++) last = (await (await call({ key: 'guess-' + i, op: 'login' }, E4)).json()).error;
+      check('door: after eight wrong passwords it stays shut, even for the right one', last === 'locked' && (await (await call({ key: 'short-pw-1', otp: now, op: 'login' }, E4)).json()).error === 'locked');
+      check('door: someone already inside keeps working, and it opens again after a quarter of an hour', (await (await auth.authorize({ token: (await auth.newToken(E4)).token }, E4)).ok) === true
+        && (await auth.authorize({ key: 'short-pw-1', otp: await auth.totp(SECRET, Date.now() + 16 * 60000) }, E4, Date.now() + 16 * 60000)).ok === true);
+    }
     const unlock = async (body) => core.handle(new Request('http://x/api/unlock', { method: 'POST', body: JSON.stringify(body) }), E3, stripeStandIn);
     const adm = async (op, more) => (await call(Object.assign({ key: ENV.ADMIN_KEY, op }, more || {}), E3)).json();
     await adm('code-reset', { code: await core.codeForSession(ENV, 'cs_live_PAID00000001') });

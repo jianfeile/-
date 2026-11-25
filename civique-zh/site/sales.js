@@ -58,7 +58,7 @@
         if (!d.ok) {
           $('out').hidden = true;
           if (body.token) { try { sessionStorage.removeItem(STORE); } catch (e) { /* nothing kept */ } $('msg').textContent = d.error === 'expired' || d.error === 'forbidden' ? '登录已过期，请重新输入密码。' : '出错了，稍后再试。'; return; }
-          $('msg').textContent = d.error === 'forbidden' ? '密码不对。' : d.error === 'otp_required' ? '请输入谷歌验证器里的 6 位数字。' : d.error === 'bad_otp' ? '验证器的数字不对或已过期，等它换下一组再试。'
+          $('msg').textContent = d.error === 'forbidden' ? '密码不对。' : d.error === 'locked' ? '输错次数太多，后台已暂时锁住，15 分钟后再试。' : d.error === 'otp_required' ? '请输入谷歌验证器里的 6 位数字。' : d.error === 'bad_otp' ? '验证器的数字不对或已过期，等它换下一组再试。'
             : d.error === 'not_configured' ? '还没设置好：Cloudflare 里缺少密钥。' : d.error === 'payment_service' ? 'Stripe 没有回应，稍后再试。' : '出错了，稍后再试。';
           return;
         }

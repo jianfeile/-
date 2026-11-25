@@ -21,7 +21,7 @@
       .then(function (d) { if (d.error === 'expired' || (d.error === 'forbidden' && TOKEN)) signOut('登录已过期，请重新输入密码。'); return d; });
   }
   function why(e) {
-    return e === 'forbidden' ? '密码不对。' : e === 'otp_required' ? '请输入谷歌验证器里的 6 位数字。' : e === 'bad_otp' ? '验证器的数字不对或已过期，等它换下一组再试。' : e === 'expired' ? '登录已过期，请重新输入密码。' : e === 'not_configured' ? '还没设置管理密码。' : e === 'no_database' ? '数据库还没接上。' : e === 'network' ? '网络不通，稍后再试。' : '出错了，稍后再试。';
+    return e === 'forbidden' ? '密码不对。' : e === 'otp_required' ? '请输入谷歌验证器里的 6 位数字。' : e === 'bad_otp' ? '验证器的数字不对或已过期，等它换下一组再试。' : e === 'expired' ? '登录已过期，请重新输入密码。' : e === 'locked' ? '输错次数太多，后台已暂时锁住，15 分钟后再试。' : e === 'not_configured' ? '还没设置管理密码。' : e === 'no_database' ? '数据库还没接上。' : e === 'network' ? '网络不通，稍后再试。' : '出错了，稍后再试。';
   }
   function when(ms) {
     if (!ms) return '';

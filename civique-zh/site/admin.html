@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>管理后台</title>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <style>
   :root { color-scheme: light dark; --g: #00A66C; --gt: #00704A; --line: #D5E2DB; --ink2: #5B6B64; --soft: #EEF4F0; --bad: #C8302A; --warn: #FFC933; }
   @media (prefers-color-scheme: dark) { :root { --line: #2C3F38; --ink2: #A9B8B1; --soft: #12241E; --gt: #4FD6A0; } }
@@ -77,7 +77,20 @@
         <button type="button" id="rnew">生成链接</button></div>
       <div id="rmade" hidden style="margin-top:10px"><p class="small" style="margin-bottom:4px">把这条链接发给对方，让对方发朋友圈或发给客人：</p>
         <div class="row"><input id="rlink" class="grow" type="text" readonly aria-label="推荐链接"><button type="button" class="plain" id="rcopy">复制</button></div></div>
-      <p class="small">自己发帖、平时宣传，直接用官网 <b id="rhome"></b>，不用带代号。代号只能用英文字母、数字、短横线。</p>
+      <p class="small">自己发帖、平时宣传，直接用官网 <b id="rhome"></b>，不用带代号。代号只能用英文字母、数字、短横线。 <button type="button" class="plain" id="phome" style="padding:3px 10px">官网的海报和二维码</button></p>
+    </div>
+    <div id="pbox" class="card" hidden>
+      <div class="row"><h3 class="grow" style="margin:0" id="ptitle">海报</h3><button type="button" class="plain" id="pclose" style="padding:3px 10px">关闭</button></div>
+      <p class="small" id="plink"></p>
+      <div class="row" style="align-items:flex-start">
+        <img id="pimg" alt="推广海报" style="width:min(100%,300px);border-radius:12px;border:2px solid var(--line)">
+        <div class="grow" style="display:flex;flex-direction:column;gap:8px;align-items:flex-start">
+          <button type="button" id="pdl">下载海报</button>
+          <button type="button" class="plain" id="qdl">只下载二维码</button>
+          <img id="qimg" alt="二维码" style="width:150px;height:150px;border:2px solid var(--line);border-radius:8px">
+          <p class="small">电脑上点“下载”。手机上长按图片保存。海报可以直接发朋友圈、发给客人，对方长按或扫码就进到网站，算在这个推荐人名下。自己设计海报的话，只下载二维码贴上去。</p>
+        </div>
+      </div>
     </div>
     <div class="scroll"><table><thead><tr><th>推荐人</th><th>链接</th><th class="n">带来的人</th><th class="n">已付费</th><th class="n">近 7 天在用</th><th class="n">订单</th><th class="n">收款</th><th class="n">佣金</th><th></th></tr></thead><tbody id="rlist"></tbody></table></div>
     <p class="small">“带来的人”包括还没付费的。“订单、收款”直接取自 Stripe，没有扣手续费和退款；佣金按每个人自己的比例算。没有登记过的代号（有人自己在网址里写的）也会列出来，标“未登记”。</p>
@@ -100,6 +113,8 @@
     <div id="bedit"></div>
   </section>
 </div>
+<script src="vendor/qrcode.js"></script>
+<script src="poster.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

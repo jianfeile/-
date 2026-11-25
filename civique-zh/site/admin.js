@@ -86,7 +86,10 @@
       else { name.appendChild(el('b', { text: x.name || x.ref })); if (!x.known) name.appendChild(el('span', { cls: 'tag', text: '未登记' })); name.appendChild(el('div', { cls: 'small', text: '代号 ' + x.ref })); }
       tr.appendChild(name);
       var link = td('');
-      if (x.ref) { var b = el('button', { type: 'button', cls: 'plain', text: '复制' }); b.style.padding = '3px 9px'; b.addEventListener('click', function () { copy(linkOf(x.ref), b); }); link.appendChild(b); }
+      if (x.ref) {
+        var b = el('button', { type: 'button', cls: 'plain', text: '复制' }); b.style.padding = '3px 9px'; b.style.marginRight = '6px'; b.addEventListener('click', function () { copy(linkOf(x.ref), b); }); link.appendChild(b);
+        var pb = el('button', { type: 'button', cls: 'plain', text: '海报' }); pb.style.padding = '3px 9px'; pb.addEventListener('click', function () { showPoster(linkOf(x.ref), x.name || x.ref, x.ref); }); link.appendChild(pb);
+      }
       tr.appendChild(link);
       tr.appendChild(td(x.n, 'n')); tr.appendChild(td(x.paid, 'n')); tr.appendChild(td(x.live, 'n'));
       tr.appendChild(td(SALES ? x.orders : '—', 'n')); tr.appendChild(td(SALES ? money(x.amount) : '—', 'n'));
@@ -102,6 +105,23 @@
       }
       tr.appendChild(ops); $('rlist').appendChild(tr);
     });
+  }
+  // a poster and a QR code for one link
+  var POSTER = { cv: null, qr: null, file: 'kaocivique' };
+  function showPoster(link, who, code) {
+    $('pbox').hidden = false; $('ptitle').textContent = (who ? who + ' 的' : '官网的') + '海报和二维码'; $('plink').textContent = link;
+    POSTER.file = 'kaocivique' + (code ? '-' + code : '');
+    POSTER.qr = window.Poster.qrOnly(link, 1024); $('qimg').src = POSTER.qr.toDataURL('image/png');
+    $('pimg').removeAttribute('src');
+    window.Poster.poster({ link: link, total: QS.length || 617 }).then(function (cv) { POSTER.cv = cv; $('pimg').src = cv.toDataURL('image/png'); });
+    $('pbox').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function download(cv, name) {
+    if (!cv) return;
+    cv.toBlob(function (blob) {
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+    }, 'image/png');
   }
   function loadRefs() {
     return api('refs').then(function (d) { if (d.ok) REFS = d.refs || []; drawRefs(); });
@@ -281,11 +301,16 @@
       $('rnew').disabled = false;
       if (!d.ok) return say(d.error === 'taken' ? '这个代号已经给别人用了，换一个。' : why(d.error));
       $('rlink').value = linkOf(d.code); $('rmade').hidden = false;
+      showPoster(linkOf(d.code), name, d.code);
       say('链接生成好了。', true); $('rname').value = ''; $('rcode').value = '';
       loadRefs();
     });
   });
   $('rcopy').addEventListener('click', function () { copy($('rlink').value, $('rcopy')); });
+  $('phome').addEventListener('click', function () { showPoster(location.origin + '/', '', ''); });
+  $('pclose').addEventListener('click', function () { $('pbox').hidden = true; });
+  $('pdl').addEventListener('click', function () { download(POSTER.cv, POSTER.file + '-poster.png'); });
+  $('qdl').addEventListener('click', function () { download(POSTER.qr, POSTER.file + '-qr.png'); });
 
   // ---------------------------------------------------------------- unlock codes
   function loadCodes() {

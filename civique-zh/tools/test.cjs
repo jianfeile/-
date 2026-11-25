@@ -1172,6 +1172,17 @@ if (CODE) {
     await page.waitForSelector('#rmade:not([hidden])');
     const madeLink = await page.inputValue('#rlink');
     check('referrers: a link with a made-up short code is given, ready to copy', /\/\?r=[a-z2-9]{5}$/.test(madeLink), madeLink);
+    await page.waitForFunction(() => (document.getElementById('pimg').getAttribute('src') || '').startsWith('data:image/png'));
+    const dims = await page.evaluate(() => new Promise((ok) => { const im = new Image(); im.onload = () => ok([im.naturalWidth, im.naturalHeight]); im.src = document.getElementById('pimg').src; }));
+    const qrSame = await page.evaluate((link) => { const m = window.Poster.matrix(link), n = m.length; return n >= 21 && m[0][0] && m[0][6] && m[6][0] && !m[1][1] && m[n - 1][0]; }, madeLink);
+    check('poster: a new link comes with its poster (1080 × 1440) and its QR code, named in the title', dims.join('x') === '1080x1440' && qrSame && /小丽（朋友圈） 的海报/.test(await page.locator('#ptitle').innerText()) && (await page.locator('#plink').innerText()) === madeLink, dims.join('x'));
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('#pdl').click()]);
+    const [dq] = await Promise.all([page.waitForEvent('download'), page.locator('#qdl').click()]);
+    check('poster: poster and QR code download as pictures named after the referrer', /^kaocivique-[a-z2-9]{5}-poster\.png$/.test(dl.suggestedFilename()) && /^kaocivique-[a-z2-9]{5}-qr\.png$/.test(dq.suggestedFilename()), dl.suggestedFilename() + ' ' + dq.suggestedFilename());
+    await page.locator('#phome').click();
+    await page.waitForFunction(() => /官网的海报/.test(document.getElementById('ptitle').textContent));
+    check('poster: the plain site has its own poster, with no referrer in the link', /\/$/.test(await page.locator('#plink').innerText()) && !/r=/.test(await page.locator('#plink').innerText()) && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    await page.locator('#pclose').click();
     await page.fill('#rname', '老王');
     await page.fill('#rcode', 'wang');
     await page.fill('#rpct', '50');

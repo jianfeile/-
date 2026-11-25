@@ -443,6 +443,7 @@ button.opt:active:not([disabled]) { transform: translateY(2px); box-shadow: 0 1p
 .copy .pill i { font-style: normal; font-family: var(--f-lat); font-weight: 800; font-size: 15.5px; line-height: 1.3; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .copy .why { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .copy .why > p { font-size: 15px; line-height: 1.6; font-weight: 500; }
+.copy .why > * { flex: none; }      /* the panel scrolls; nothing in it may be squeezed onto its neighbour */
 .copy .voc { display: flex; flex-direction: column; gap: 5px; }
 .copy .voc li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 14.5px; line-height: 1.5; }
 .copy .voc .w { font-family: var(--f-lat); font-weight: 800; background: var(--sun); color: var(--on-sun); padding: 0 6px; border-radius: 6px; }

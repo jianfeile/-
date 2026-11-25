@@ -956,6 +956,19 @@ if (CODE) {
     check('unlock page: one pay button, with the price on it and the terms right above it; the code form is folded until asked for', payBtns.length === 1 && payBtns.every((t) => t.includes(price)) && /一次付款，不是订阅/.test(await page.locator('.offer-terms').innerText()) && (await page.locator('.buy a.btn').first().getAttribute('href')).startsWith('https://pay.example.com/x') && !(await page.locator('#code').isVisible()), payBtns.join(' | '));
     await page.locator('#have-code summary').click();
     check('unlock page: "I already have a code" opens the form', await page.locator('#code').isVisible());
+    check('no referral link, no referral name on the pay button', !/client_reference_id/.test(await page.locator('.buy a.btn').first().getAttribute('href')));
+    await page.goto(base + '?r=lili-01#unlock');
+    await page.reload();
+    await page.waitForSelector('.gets');
+    check('a link shared as ?r=name hands that name to the payment page', /[?&]client_reference_id=lili-01$/.test(await page.locator('.buy a.btn').first().getAttribute('href')), await page.locator('.buy a.btn').first().getAttribute('href'));
+    await page.goto(base + '#unlock');
+    await page.reload();
+    await page.waitForSelector('.gets');
+    check('the referral name is remembered on later visits', /client_reference_id=lili-01$/.test(await page.locator('.buy a.btn').first().getAttribute('href')));
+    await page.goto(base + '?r=<script>#unlock');
+    await page.reload();
+    await page.waitForSelector('.gets');
+    check('a malformed referral name is ignored', /client_reference_id=lili-01$/.test(await page.locator('.buy a.btn').first().getAttribute('href')));
     await ctx.close();
   }
 

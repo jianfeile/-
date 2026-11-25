@@ -429,7 +429,18 @@
     if (r === 'nocrypto') return '当前浏览器不支持解锁，请点右上角用 Safari 或 Chrome 打开本页面。';
     return '找回服务暂时不可用，请稍后再试。';
   }
-  function payHref() { var u = String(CFG.payUrl || ''); return u + (u.indexOf('?') < 0 ? '?' : '&') + 'locale=zh'; }
+  // who sent this visitor: a link shared as ?r=name. The name is kept on this device and handed to the payment page,
+  // where it is saved with the payment (Stripe: client_reference_id). The newest link wins.
+  var REF_KEY = 'civique.ref';
+  (function () {
+    var m = /[?&]r(?:ef)?=([A-Za-z0-9_-]{1,40})(?=[&#]|$)/.exec(location.search || '');
+    if (m) lsSet(REF_KEY, m[1]);
+  })();
+  function payHref() {
+    var u = String(CFG.payUrl || ''), ref = lsGet(REF_KEY);
+    u += (u.indexOf('?') < 0 ? '?' : '&') + 'locale=zh';
+    return /^[A-Za-z0-9_-]{1,40}$/.test(ref || '') ? u + '&client_reference_id=' + ref : u;
+  }
   function codeError(r) {
     if (r === 'format') return '解锁码是 12 位字母和数字，例如 ABCD-2345-EFGH，请检查后再试。';
     if (r === 'unknown') return '这个解锁码不对或已失效，请核对后再试' + (CFG.contact ? '，或联系 ' + CFG.contact : '') + '。';

@@ -959,7 +959,7 @@ if (CODE) {
     const rightText = (await page.locator('.wl-try .opt.right .fr').innerText()).trim();
     check('welcome: answering marks right and wrong and shows the Chinese translation and explanation', rightText === q.o[0] && await page.locator('.wl-try .opt.wrong').count() === 1 && (await page.locator('.wl-try .copy').innerText()).includes(q.e) && (await page.locator('.wl-try .stemz').innerText()).trim() === q.qz && await page.locator('.wl-try .stem .tw').count() > 0, rightText);
     const after = await state(page);
-    check('welcome: the answer is not a practice session and is not counted', JSON.stringify(after) === before && !after.sess && Object.keys(after.stats || {}).length === 0 && !after.target);
+    check('welcome: the answer is not a practice session and is not counted; only that it was tried is remembered', JSON.stringify(Object.assign({}, after, { marks: JSON.parse(before).marks })) === before && after.marks.demo === 1 && !after.sess && Object.keys(after.stats || {}).length === 0 && !after.target);
     await page.locator('[data-a="demo-next"]').click();
     await page.waitForFunction(() => { const r = document.querySelector('[data-a="target"]').getBoundingClientRect(); return r.top >= 0 && r.bottom <= document.querySelector('.tabs').getBoundingClientRect().top; });
     check('welcome: after the answer one tap leads to the choice of exam', await page.locator('text=你准备申请哪一种').count() === 1 && await noOverflow(page));
@@ -1021,9 +1021,14 @@ if (CODE) {
     check('unlock page: the terms of sale are one tap away and say that access is immediate with no withdrawal', await page.locator('.offer-after a[href="conditions.html"]').count() === 1 && /L221-28/.test(fs.readFileSync(path.join(SITE, 'conditions.html'), 'utf8')));
     await page.goto(base + '#home');
     await page.waitForSelector('.hero.home');
+    const early = await page.evaluate(() => { const pay = document.querySelector('.pay'), th = document.querySelector('.themes'); return pay && th ? !!(th.compareDocumentPosition(pay) & Node.DOCUMENT_POSITION_FOLLOWING) : null; });
+    check('home: before a first set is done the offer waits under the themes', early === true && await page.locator('.pay').count() === 1 && await page.locator('.pay.hot').count() === 0);
+    await page.evaluate((ids) => { const s = JSON.parse(localStorage.getItem('civique.v1')); ids.forEach((id) => { s.stats[id] = [1, 1, 1, 0, Date.now()]; }); localStorage.setItem('civique.v1', JSON.stringify(s)); }, free.qs.filter((q) => q.l.includes('csp')).slice(0, 10).map((q) => q.id));
+    await page.reload();
+    await page.waitForSelector('.hero.home');
     const order = await page.evaluate(() => { const pay = document.querySelector('.pay'), hero = document.querySelector('.hero.home'); return pay && hero ? !!(pay.compareDocumentPosition(hero) & Node.DOCUMENT_POSITION_FOLLOWING) : null; });
     const homePay = await page.locator('.pay .buy a.btn').getAttribute('href');
-    check('home: the offer is the first thing on the page and its button goes straight to the payment page', order === true && homePay.startsWith('https://pay.example.com/x') && (await page.locator('.pay .buy a.btn').innerText()).includes(price) && await page.locator('.pay').count() === 1 && await page.locator('.pay-more a[href="conditions.html"]').count() === 1 && await noOverflow(page), homePay);
+    check('home: once a set is done the offer is the first thing on the page and its button goes straight to the payment page', order === true && homePay.startsWith('https://pay.example.com/x') && (await page.locator('.pay .buy a.btn').innerText()).includes(price) && await page.locator('.pay').count() === 1 && await page.locator('.pay-more a[href="conditions.html"]').count() === 1 && await noOverflow(page), homePay);
     await page.goto(base + '#unlock');
     await page.waitForSelector('.gets');
     check('no referral link, no referral name on the pay button', !/client_reference_id/.test(await page.locator('.buy a.btn').first().getAttribute('href')));
@@ -1129,7 +1134,8 @@ if (CODE) {
     const myDev = await page.evaluate(() => localStorage.getItem('civique.dev'));
     for (let i = 0; i < 40 && !(await adm('users')).users.some((u) => u.id === 'v:' + myDev); i++) await page.waitForTimeout(100);
     const me = (await adm('users')).users.find((u) => u.id === 'v:' + myDev);
-    check('the app reports who it is once an exam type is chosen: device number, exam type, referrer', !!me && me.level === 'csp' && me.ref === 'lili-01', JSON.stringify(me));
+    let me2 = me; for (let i = 0; i < 40 && !(me2 && me2.level); i++) { await page.waitForTimeout(100); me2 = (await adm('users')).users.find((u) => u.id === 'v:' + myDev); }
+    check('the app reports who it is from the first screen, and the exam type as soon as it is chosen', !!me2 && me2.level === 'csp' && me2.ref === 'lili-01', JSON.stringify(me2));
     await page.goto(base + '#home');
     await page.reload();
     await page.locator('[data-a="continue"]').click();
@@ -1398,8 +1404,12 @@ if (CODE) {
     const hasUser = async (id) => { for (let i = 0; i < 40; i++) { const u = (await adm('users')).users.find((x) => x.id === id); if (u) return u; await new Promise((r) => setTimeout(r, 100)); } return null; };
     ({ ctx, page } = await fresh({ cfg: { login: true } }));
     await page.goto(base + '?r=wang');
+    await page.waitForSelector('[data-a="target"]');
+    check('sign-in: a first visit is not asked anything: the welcome screen and its question come first', await page.locator('#loginform').count() === 0 && await page.locator('.wl-try').count() === 1);
+    await page.evaluate((ids) => { const s = JSON.parse(localStorage.getItem('civique.v1') || '{}'); s.stats = s.stats || {}; ids.forEach((id) => { s.stats[id] = [1, 1, 1, 0, Date.now()]; }); localStorage.setItem('civique.v1', JSON.stringify(s)); }, free.qs.slice(0, 10).map((q) => q.id));
+    await page.reload();
     await page.waitForSelector('#loginform');
-    check('sign-in: the first screen asks for a phone number or an email, and nothing else is offered yet', await page.locator('[data-a="target"]').count() === 0 && await page.locator('.tabs').count() === 0 && await noOverflow(page));
+    check('sign-in: after a first set of ten, the app asks for a phone number or an email before going on', await page.locator('[data-a="target"]').count() === 0 && await page.locator('.tabs').count() === 0 && await noOverflow(page));
     await page.fill('#login', 'not a phone');
     await page.locator('#loginform button').click();
     await page.waitForSelector('#loginform .msg.bad');

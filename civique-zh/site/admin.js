@@ -51,6 +51,16 @@
     $('usum').innerHTML = '';
     [[USERS.length, '人用过'], [USERS.filter(function (u) { return u.id.slice(0, 2) !== 'v:'; }).length, '已登录或付费'], [USERS.filter(isPaid).length, '已付费'], [USERS.filter(function (u) { return u.last_seen > day; }).length, '24 小时内在用'], [USERS.filter(function (u) { return u.last_seen > week; }).length, '7 天内在用']]
       .forEach(function (x) { $('usum').appendChild(el('div', {}, [el('b', { text: x[0] }), x[1]])); });
+    var steps = [['进来过', function () { return true; }], ['答了首页那道示范题', function (u) { return (u.sum || {}).demo > 0 || (u.sum || {}).seen > 0; }],
+      ['选了考试类型', function (u) { return !!u.level; }], ['答过题', function (u) { return (u.sum || {}).seen > 0; }], ['答了 10 题以上', function (u) { return (u.sum || {}).seen >= 10; }],
+      ['登录了', function (u) { return u.id.slice(0, 2) !== 'v:'; }], ['做过模考', function (u) { return (u.sum || {}).exams > 0; }], ['付费了', isPaid]];
+    $('funnel').innerHTML = '';
+    steps.forEach(function (st) {
+      var n = USERS.filter(st[1]).length, pct = USERS.length ? Math.round(100 * n / USERS.length) : 0, tr = el('tr');
+      tr.appendChild(td(st[0])); tr.appendChild(td(n, 'n')); tr.appendChild(td(pct + '%', 'n'));
+      var b = td(''), bar = el('div', { cls: 'bar' }), i = el('i'); i.style.width = pct + '%'; bar.appendChild(i); b.appendChild(bar); tr.appendChild(b);
+      $('funnel').appendChild(tr);
+    });
     $('ulist').innerHTML = '';
     list.slice(0, 500).forEach(function (u) {
       var s = u.sum || {}, tr = el('tr', { cls: 'pick' });

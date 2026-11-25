@@ -335,7 +335,7 @@
   }
   function syncNow(force) {
     var url = apiUrl('sync');
-    if (!url || !DB.free || (!S.target && !S.user)) return;
+    if (!url || !DB.free) return;
     var now = Date.now();
     if (!force && now - syncAt < 60000) return;
     var ok = 0, miss = 0, ans = 0, seen = 0, best = 0, bestN = 0;
@@ -343,7 +343,7 @@
     S.exams.forEach(function (e) { if (!e.mini && e.score >= best) { best = e.score; bestN = e.n; } });
     var body = JSON.stringify({
       device: deviceId(), login: (S.user && S.user.id) || '', code: (S.unlock && S.unlock.code) || '', unlocked: unlocked(), ref: lsGet(REF_KEY) || '', level: S.target, examDate: S.examDate || '',
-      sum: { seen: seen, ok: ok, miss: miss, ans: ans, pool: S.target ? pool().length : 0, exams: S.exams.length, best: best, bestN: bestN },
+      sum: { demo: S.marks.demo ? 1 : 0, seen: seen, ok: ok, miss: miss, ans: ans, pool: S.target ? pool().length : 0, exams: S.exams.length, best: best, bestN: bestN },
       state: { stats: S.stats, days: S.days || {}, exams: S.exams.map(function (e) { return { ts: e.ts, target: e.target, mini: e.mini, score: e.score, n: e.n, passAt: e.passAt, secs: e.secs }; }) }
     });
     if (body === syncSent) return;
@@ -1085,7 +1085,8 @@
   function pic(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + PIC[n] + '</svg>'; }
   // ---------------------------------------------------------------- who is this: a phone number or an email, nothing to verify
   // The seller wants to know who uses the site; the visitor may also look around first. A buyer is already known by the payment.
-  function needLogin() { return !!(CFG.login && CFG.api) && !S.user && !S.guest && !unlocked() && !S.exam && !S.pending; }
+  // Asked once the visitor has seen what the site is: after a first set of questions, and never in the middle of one.
+  function needLogin() { return !!(CFG.login && CFG.api) && !S.user && !S.guest && !unlocked() && !S.exam && !S.pending && (ui.loginAsk || (answeredCount() >= SET && route() !== 'quiz')); }
   function loginId(raw) {
     var v = String(raw || '').trim();
     if (v.indexOf('@') >= 0) { v = v.toLowerCase(); return /^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)+$/.test(v) && v.length <= 120 ? { id: v, kind: 'email' } : null; }
@@ -1097,12 +1098,12 @@
       '<header class="hero wl-hero">' + heroDeco() + six('cheer', 0, 'bob') + '<div class="txt"><p class="say wl-hi"><span>你好，我是小玛</span></p>' +
       '<h1>法国公民考试，<br>用中文<em>看懂每一题</em></h1>' +
       '<p class="wl-lead"><b class="wl-un">非官方</b>法语原题 + 中文讲解</p></div></header>' +
-      '<section class="card stack login-card"><h2>先登录，再开始</h2>' +
+      '<section class="card stack login-card"><h2>' + (answeredCount() >= SET ? '做得不错！登录后继续' : '登录') + '</h2>' +
       '<form id="loginform" class="stack"><div class="field"><input id="login" class="plain" name="login" type="text" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="手机号或邮箱" aria-label="手机号或邮箱" maxlength="120"' + (ui.loginVal ? ' value="' + esc(ui.loginVal) + '"' : '') + '></div>' +
       '<button class="btn wide lg" type="submit"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '请稍候' : '进入') + '</button>' +
       '<p class="msg ' + (ui.loginMsg ? 'bad' : '') + '" role="status">' + esc(ui.loginMsg || '') + '</p></form>' +
       '<p class="small">不用密码，也不用验证码。用来记住你是谁，方便售后和找回购买。买过的话，填付款时的邮箱会自动解锁。</p></section>' +
-      '<p class="center"><button class="linkbtn" type="button" data-a="guest">先不登录，试用一下</button></p>' +
+      '<p class="center"><button class="linkbtn" type="button" data-a="guest">先不登录，继续做题</button></p>' +
       '</main>';
   }
   function vChoose() {
@@ -1136,7 +1137,8 @@
     var out = '<main class="wrap">' + pagehead('<span class="h-opt">今天</span>' + (began ? '继续闯关' : '开始闯关'), levelChip() + countChip(), 'h-head');
     if (ui.netFail) out += '<p class="note warn">已购买的题库这次没有加载出来，目前只显示免费题。请检查网络后刷新页面。</p>';
     if (ui.revoked) out += '<p class="note warn">这台设备保存的解锁码已失效，请重新输入解锁码或联系卖家。</p>';
-    if (!unlocked()) out += payBlock('解锁全部内容', true);        // first thing on the page until the bank is unlocked, then gone
+    var tried = answeredCount() >= SET;
+    if (!unlocked() && tried) out += payBlock('解锁全部内容', true);        // first thing on the page once a set has been tried, gone when unlocked
     // today's goal, with 小玛 inside the ring
     var say = !p.goal ? (unlocked() ? '全部掌握了，去模考吧' : '免费题都掌握了') : (hit ? '今天达标了！' : (p.done ? '再做 <b>' + (p.goal - p.done) + '</b> 题就达标！' : '今天做 <b>' + p.goal + '</b> 题'));
     out += '<section class="hero home">' + heroDeco() + '<div class="hero-top">' +
@@ -1162,6 +1164,7 @@
         '<span class="ti hexic white">' + hex() + icon(th.id) + '</span><span class="cnt">' + c.done + '<small> / ' + c.total + '</small></span>' +
         '<span class="t1">' + th.zh + '</span>' + bar(c.done, c.total, 'on-c') + '</button>';
     }).join('') + '</div>';
+    if (!unlocked() && !tried) out += payBlock('解锁全部内容');
     return out + disclaimer() + '</main>' + tabs('home');
   }
   function themeSheet(tid) {
@@ -1765,7 +1768,16 @@
     DB.rc = { n: n, ids: order };
     return DB.rc;
   }
-  function sessOpen(ri) { var v = ui.open['s' + ri]; return v === undefined ? ri < 2 : v; }
+  // a session is a free sample when every question of it that is in the bank can be opened without paying
+  function sessSample(r) {
+    var linked = r.i.filter(function (x) { return x.r; });
+    return !unlocked() && linked.length >= 8 && linked.every(function (x) { return DB.byId[x.r]; });
+  }
+  function sessOpen(ri) {
+    var v = ui.open['s' + ri];
+    if (v !== undefined) return v;
+    return !unlocked() && DB.recall.some(sessSample) ? sessSample(DB.recall[ri]) : ri < 2;        // the sample first, when there is one
+  }
   // a recalled question in the feed: reviewRow with the theme colour on its number and, from two mentions, the heat
   function recallRow(x, n, key, heat) {
     var hot = heat >= 2 ? '<span class="rq-x"><span class="tag hot">机经提到 ' + heat + ' 次</span></span>' : '';
@@ -1782,6 +1794,8 @@
     out += '<section class="hero rc-hero">' + heroDeco() + '<ul class="rc-nums"><li><b>' + DB.recall.length + '</b><span>场考试</span></li><li><b>' + rc.ids.length + '</b><span>道题</span></li>' +
       (hot.length ? '<li class="rc-hot"><b>' + hot.length + '</b><span>提到 2 次以上</span></li>' : '') + '</ul>' +
       (can.length ? '<button class="btn wide" data-a="start" data-v="all|recall">' + icon('play') + '练这些题</button>' : '') + '</section>';
+    var nSample = DB.recall.filter(sessSample).length;
+    if (!unlocked() && nSample) out += '<p class="note blue rc-free">标着“免费样品”的那一场，每道题都能点开看中文讲解。解锁后，其余 ' + (DB.recall.length - nSample) + ' 场也都能看。</p>';
     out += '<p class="rc-legend" aria-label="题号的颜色是主题">' + THEMES.map(function (t) { return '<span class="tag th t-' + t.id + '"><i></i>' + TH_SHORT[t.id] + '</span>'; }).join('') + '</p><ol class="rc-feed">';
     var month = '';
     DB.recall.forEach(function (r, ri) {
@@ -1791,7 +1805,7 @@
         month = r.w;
       }
       out += '<li class="rc-s' + (isOpen ? ' on' : '') + '"><button class="crow" data-a="sess" data-v="' + ri + '" aria-expanded="' + isOpen + '"><span class="grow"><span class="rc-top">' +
-        (LEVELS[r.l] ? '<span class="tag lv-' + r.l + '">' + LEVELS[r.l].zh + '</span>' : '') + '<span class="rc-n"><b>' + r.i.length + '</b> 题</span></span>' +
+        (LEVELS[r.l] ? '<span class="tag lv-' + r.l + '">' + LEVELS[r.l].zh + '</span>' : '') + '<span class="rc-n"><b>' + r.i.length + '</b> 题</span>' + (sessSample(r) ? '<span class="tag hot">免费样品 · 含讲解</span>' : '') + '</span>' +
         (r.n ? '<span class="cl">' + esc(r.n) + '</span>' : '') + '</span><span class="m more" aria-hidden="true">' + (isOpen ? '−' : '+') + '</span></button>';
       if (isOpen) out += '<ul class="qlist inner">' + r.i.map(function (x, i) { return recallRow(x, i + 1, 'r' + ri + '-' + i, x.r ? rc.n[x.r] : 0); }).join('') + '</ul>';
       out += '</li>';
@@ -2229,7 +2243,7 @@
 
   // ---------------------------------------------------------------- actions
   var ACT = {
-    target: function (v) { if (!LEVELS[v]) return; var first = !S.target; if (S.target !== v) { S.target = v; S.sess = null; } save(); render(first); },   // first choice: the welcome screen was scrolled, the home screen starts at the top
+    target: function (v) { if (!LEVELS[v]) return; var first = !S.target; if (S.target !== v) { S.target = v; S.sess = null; } save(); render(first); syncNow(true); },   // first choice: the welcome screen was scrolled, the home screen starts at the top
     goto: function (v) { ui.modal = null; go(v); },
     close: function () { ui.modal = null; render(); },
     // how to put the site on the phone's home screen; the steps depend on the phone and on being inside WeChat or not
@@ -2333,6 +2347,7 @@
       confirmPayment().then(function () { ui.busy = false; render(); });
     },
     'demo-pick': function (v) {
+      if (!S.marks.demo) { S.marks.demo = 1; save(); }
       if (ui.demo !== undefined) return;
       ui.demo = Number(v); render();                     // nothing is saved: not a practice session, not in the statistics
       var card = document.querySelector('.wl-on');           // bring the way on into view, the explanation sits right above it
@@ -2386,9 +2401,9 @@
     'chk-pick': function (v) { var w = chkWalk(); if (!w.node || !w.node.o[Number(v)]) return; ui.chk = (ui.chk || []).slice(0, w.said.length).concat(Number(v)); render(true); },
     'chk-back': function (v) { ui.chk = (ui.chk || []).slice(0, Number(v)); render(true); },
     'chk-go': function (v) { if (!LEVELS[v]) return; if (S.target !== v) { S.target = v; S.sess = null; } save(); go('home'); },
-    guest: function () { S.guest = 1; save(); render(true); },
+    guest: function () { S.guest = 1; ui.loginAsk = false; save(); render(true); },
     logout: function () { S.user = null; S.guest = 0; ui.loginVal = ''; ui.loginMsg = ''; save(); render(true); },
-    'login-open': function () { S.guest = 0; save(); render(true); },
+    'login-open': function () { S.guest = 0; ui.loginAsk = true; save(); render(true); },
     'reset-yes': function () { S.stats = {}; S.exams = []; S.days = {}; S.sess = null; S.exam = null; ui.modal = null; save(); render(true); }
   };
   document.addEventListener('click', function (ev) {
@@ -2413,7 +2428,7 @@
       ui.loginVal = lv;
       if (!who) { ui.loginMsg = '请填手机号（只要数字）或邮箱。'; render(); return; }
       ui.loginMsg = ''; ui.loginVal = '';
-      S.user = { id: who.id, kind: who.kind, t: Date.now() }; S.guest = 0; save();
+      S.user = { id: who.id, kind: who.kind, t: Date.now() }; S.guest = 0; ui.loginAsk = false; save();
       if (who.kind !== 'email' || unlocked()) { render(true); syncNow(true); return; }
       ui.busy = true; render();                      // an email: someone who already paid with it is unlocked on the spot
       unlockViaServer({ email: who.id }).then(function (r) {

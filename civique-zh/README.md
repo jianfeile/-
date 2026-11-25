@@ -55,6 +55,11 @@ cd site && python3 -m http.server 8080      # 打开 http://localhost:8080
    - `CONTENT_KEY`：题库密钥，`node tools/bank.mjs key --code XXXX-XXXX-XXXX` 的输出。
    可选：`PAYMENT_LINK`（`plink_...`，只认这一个收款链接的付款）、`REVOKED`（作废的解锁码，逗号分隔）。
 
+### 推荐人和销售报表
+
+- 发给朋友的链接在网址后加 `?r=名字`（英文字母、数字、短横线，最长 40 个）。名字记在访客的设备上，也留在地址栏里，付款时作为 `client_reference_id` 交给 Stripe。没有链接的人可以在解锁页“朋友推荐来的？”里手填。
+- `site/sales.html` 是卖家自己看的报表：按月份和推荐人汇总单数、金额和佣金，可下载表格。它调用 `/api/sales`（`server/sales-core.mjs`），需要再设一个机密 `ADMIN_KEY`（至少 16 个字符的管理密码），并且必须设置 `PAYMENT_LINK`。报表不返回任何买家信息，不扣退款。
+
 流程：买家付款后被带回网站，网页把这笔付款的编号交给 `/api/unlock`，函数向 Stripe 核实确已付款，
 返回题库密钥和一个属于这位买家的解锁码，浏览器随即解锁。换设备时输入解锁码，或者填付款邮箱找回。
 函数不保存任何数据：解锁码的前半段由付款编号算出，后半段是前半段的签名。

@@ -432,14 +432,22 @@
   // who sent this visitor: a link shared as ?r=name. The name is kept on this device and handed to the payment page,
   // where it is saved with the payment (Stripe: client_reference_id). The newest link wins.
   var REF_KEY = 'civique.ref';
+  function refOk(r) { return /^[A-Za-z0-9_-]{1,40}$/.test(r || ''); }
   (function () {
     var m = /[?&]r(?:ef)?=([A-Za-z0-9_-]{1,40})(?=[&#]|$)/.exec(location.search || '');
     if (m) lsSet(REF_KEY, m[1]);
   })();
+  // the name stays in the address, so that "open in the browser" from WeChat, a copied link or a forwarded page still carry it
+  function keepRef() {
+    var ref = lsGet(REF_KEY), q = location.search || '';
+    if (!refOk(ref) || /^(about|blob|data):/.test(location.href) || /[?&](paid|session_id|code)=/.test(q)) return;
+    if (new RegExp('[?&]r=' + ref + '(&|$)').test(q)) return;
+    try { history.replaceState(history.state, '', location.pathname + '?r=' + ref + (location.hash || '')); } catch (e) { /* keep the url */ }
+  }
   function payHref() {
     var u = String(CFG.payUrl || ''), ref = lsGet(REF_KEY);
     u += (u.indexOf('?') < 0 ? '?' : '&') + 'locale=zh';
-    return /^[A-Za-z0-9_-]{1,40}$/.test(ref || '') ? u + '&client_reference_id=' + ref : u;
+    return refOk(ref) ? u + '&client_reference_id=' + ref : u;
   }
   function codeError(r) {
     if (r === 'format') return '解锁码是 12 位字母和数字，例如 ABCD-2345-EFGH，请检查后再试。';
@@ -2025,7 +2033,10 @@
         '<li>自动回到本站，全部题目马上解锁。</li>' +
         '<li>同时给你一个解锁码，换手机或换浏览器时输入。</li>' +
         (CFG.api ? '<li>解锁码找不到了，可以用付款时的邮箱找回。</li>' : '') + '</ol>' +
-        '<p>不会自动续费，题目更正和补充不再收费。付款页面由 Stripe 提供，本站不接触你的卡号。</p></div></details>'
+        '<p>不会自动续费，题目更正和补充不再收费。付款页面由 Stripe 提供，本站不接触你的卡号。</p></div></details>' +
+        '<details class="disc flat" id="ref-box"' + (at === 'ref' ? ' open' : '') + '><summary>朋友推荐来的？</summary><div class="in">' +
+        (refOk(lsGet(REF_KEY)) ? '<p class="small">推荐码已记下：<b>' + esc(lsGet(REF_KEY)) + '</b>。价格不变，只是让推荐你的朋友得到感谢。要换的话重新填。</p>' : '<p class="small">填朋友给你的推荐码再付款。价格不变，只是让推荐你的朋友得到感谢。没有就不用填。</p>') +
+        '<form id="refform" class="stack"><div class="field"><input id="ref" class="plain" name="ref" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="推荐码" aria-label="推荐码" maxlength="40"><button class="btn" type="submit">确定</button></div>' + msg('ref') + '</form></div></details>'
         : '<p class="note">' + (CFG.contact ? '购买请联系：' + esc(CFG.contact) + '。付款后会收到一个解锁码。' : '付款后会收到一个解锁码，填在下面即可。') + '</p>') +
       '<p class="offer-honest">官方备考资料是免费的，这里收费的是中文翻译、讲解和工具。可以先免费试 ' + d.free + ' 题。</p></section>';
 
@@ -2065,6 +2076,7 @@
     if (S.exam && r !== 'exam') { location.hash = 'exam'; return; }
     if (r === 'quiz' && !S.sess) { location.hash = 'home'; return; }
     closeWord();
+    keepRef();
     app.innerHTML = VIEWS[r]() + modal();
     syncDock();
     if (top) window.scrollTo(0, 0);
@@ -2265,6 +2277,14 @@
   });
   document.addEventListener('submit', function (ev) {
     if (ev.target.id === 'cform') { ev.preventDefault(); var cq = document.getElementById('cq'); if (cq) cq.blur(); return; }
+    if (ev.target.id === 'refform') {
+      ev.preventDefault();
+      var rv = ((document.getElementById('ref') || {}).value || '').trim();
+      if (refOk(rv)) { lsSet(REF_KEY, rv); ui.msg = { ok: true, text: '记下了，现在可以付款。', at: 'ref' }; }
+      else ui.msg = { ok: false, text: '推荐码只有英文字母、数字和短横线，请照朋友给的原样填。', at: 'ref' };
+      render();
+      return;
+    }
     if (ev.target.id === 'mailform') {
       ev.preventDefault();
       if (ui.busy) return;

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>销售和推荐人</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<style>
+  :root { color-scheme: light dark; --g: #00A66C; --line: #D5E2DB; --ink2: #5B6B64; }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 720px; padding: 20px 16px 60px; font: 16px/1.6 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 28px 0 8px; }
+  p { margin: 6px 0; } .small { font-size: 13.5px; color: var(--ink2); }
+  form { display: flex; gap: 8px; margin: 16px 0; }
+  input, select, button { font: inherit; padding: 10px 12px; border-radius: 10px; border: 2px solid var(--line); background: transparent; color: inherit; min-width: 0; }
+  input { flex: 1 1 auto; }
+  button { background: var(--g); border-color: var(--g); color: #fff; font-weight: 700; cursor: pointer; }
+  button.plain { background: transparent; color: inherit; border-color: var(--line); }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+  .sum { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sum div { flex: 1 1 130px; border: 2px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+  .sum b { display: block; font-size: 24px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 13.5px; color: var(--ink2); } td.n, th.n { text-align: right; }
+  #msg { color: #C8302A; font-weight: 700; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>销售和推荐人</h1>
+<p class="small">只有你能看。数据直接取自 Stripe，每次打开都是最新的。</p>
+<form id="f"><input id="k" type="password" autocomplete="current-password" placeholder="管理密码" aria-label="管理密码"><button type="submit">查看</button></form>
+<p id="msg" role="status"></p>
+<div id="out" hidden>
+  <div class="bar"><label for="m">月份</label><select id="m"></select>
+    <label for="pc">佣金 %</label><input id="pc" type="number" min="0" max="100" step="1" value="30" style="flex:0 0 84px">
+    <button class="plain" id="csv" type="button">下载表格</button></div>
+  <div class="sum" id="sum"></div>
+  <h2>按推荐人</h2>
+  <div class="scroll"><table><thead><tr><th>推荐人</th><th class="n">单数</th><th class="n">金额</th><th class="n">佣金</th></tr></thead><tbody id="by"></tbody></table></div>
+  <h2>每一笔</h2>
+  <div class="scroll"><table><thead><tr><th>时间（巴黎）</th><th>推荐人</th><th class="n">金额</th></tr></thead><tbody id="rows"></tbody></table></div>
+  <p class="small">金额是顾客付的钱，没有扣 Stripe 手续费；退款的订单没有扣除，退款请在 Stripe 后台核对。佣金比例只是帮你算数，改了不会保存到别处。</p>
+</div>
+<script src="sales.js"></script>
+</body>
+</html>

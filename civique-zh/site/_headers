@@ -5,3 +5,6 @@
   Cache-Control: public, max-age=300
 /audio/*
   Cache-Control: public, max-age=31536000, immutable
+/sales*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store

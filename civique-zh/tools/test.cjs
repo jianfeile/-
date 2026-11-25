@@ -22,8 +22,16 @@ const SESSIONS = {
   cs_live_OTHER0000001: { livemode: true, status: 'complete', payment_status: 'paid', payment_link: 'plink_other', customer_details: { email: 'other@example.com' } },
   cs_test_PAID00000001: { livemode: false, status: 'complete', payment_status: 'paid', payment_link: 'plink_ours', customer_details: { email: 'tester@example.com' } },
 };
+Object.assign(SESSIONS.cs_live_PAID00000001, { created: 1795000000, amount_total: 1299, currency: 'eur', client_reference_id: 'lili-01' });
+Object.assign(SESSIONS.cs_live_PROC00000001, { created: 1795000100, amount_total: 1299, currency: 'eur', client_reference_id: 'lili-01' });
+Object.assign(SESSIONS.cs_live_OTHER0000001, { created: 1795000200, amount_total: 500, currency: 'eur', client_reference_id: 'wang' });
+Object.assign(SESSIONS.cs_test_PAID00000001, { created: 1795000300, amount_total: 1299, currency: 'eur', client_reference_id: 'wang' });
 for (const id of Object.keys(SESSIONS)) Object.assign(SESSIONS[id], { id, object: 'checkout.session' });
-const ENV = { STRIPE_KEY: 'rk_live_standin', PAYMENT_LINK: 'plink_ours', CONTENT_KEY: Buffer.alloc(32, 7).toString('base64') };
+const ENV = { STRIPE_KEY: 'rk_live_standin', PAYMENT_LINK: 'plink_ours', CONTENT_KEY: Buffer.alloc(32, 7).toString('base64'), ADMIN_KEY: 'admin-password-0123456789' };
+// more sales for the report: 120 of them, so the list comes in two pages
+const MANY = {};
+for (let i = 0; i < 120; i++) MANY['cs_live_MANY' + String(i).padStart(6, '0')] = { object: 'checkout.session', id: 'cs_live_MANY' + String(i).padStart(6, '0'), livemode: true, status: 'complete', payment_status: 'paid', payment_link: 'plink_ours', created: 1790000000 + i * 3600, amount_total: 1299, currency: 'eur', client_reference_id: i % 3 === 0 ? 'wang' : (i % 3 === 1 ? null : '<b>bad</b>'), customer_details: { email: 'many' + i + '@example.com' } };
+let reportMany = false;
 async function stripeStandIn(url, opts) {
   const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   if ((opts.headers.authorization || '') !== 'Bearer ' + ENV.STRIPE_KEY) return reply(401, { error: { message: 'bad key' } });
@@ -32,17 +40,32 @@ async function stripeStandIn(url, opts) {
   if (one) return SESSIONS[one[1]] ? reply(200, SESSIONS[one[1]]) : reply(404, { error: { message: 'no such session' } });
   if (u.pathname === '/v1/checkout/sessions') {
     const email = u.searchParams.get('customer_details[email]'), link = u.searchParams.get('payment_link'), status = u.searchParams.get('status');
+    if (email === null) {                 // the sales report: every payment, newest first, 100 a page
+      const all = Object.values(SESSIONS).concat(reportMany ? Object.values(MANY) : []).filter((x) => (!link || x.payment_link === link) && (!status || x.status === status)).sort((a, b) => b.created - a.created);
+      const from = u.searchParams.get('starting_after') ? all.findIndex((x) => x.id === u.searchParams.get('starting_after')) + 1 : 0;
+      return reply(200, { object: 'list', data: all.slice(from, from + 100), has_more: all.length > from + 100 });
+    }
     const data = Object.values(SESSIONS).filter((x) => x.customer_details.email === email && (!link || x.payment_link === link) && (!status || x.status === status));
     return reply(200, { object: 'list', data });
   }
   return reply(404, {});
 }
-let core = null;
+let core = null, salesCore = null;
 
 function serve() {
   return new Promise((resolve) => {
     const srv = http.createServer((req, res) => {
       let p = decodeURIComponent(req.url.split('?')[0]);
+      if (p === '/api/sales') {
+        const chunks = [];
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', async () => {
+          const r = await salesCore.handle(new Request('http://x/api/sales', { method: req.method, headers: { 'content-type': 'application/json' }, body: req.method === 'POST' ? Buffer.concat(chunks) : undefined }), ENV, stripeStandIn);
+          res.writeHead(r.status, { 'content-type': 'application/json' });
+          res.end(await r.text());
+        });
+        return;
+      }
       if (p === '/api/unlock') {
         const chunks = [];
         req.on('data', (c) => chunks.push(c));
@@ -81,6 +104,7 @@ if (CODE) {
 
 (async () => {
   core = await import(require('url').pathToFileURL(path.resolve(__dirname, '..', 'server', 'unlock-core.mjs')).href);
+  salesCore = await import(require('url').pathToFileURL(path.resolve(__dirname, '..', 'server', 'sales-core.mjs')).href);
   const srv = await serve();
   const base = 'http://127.0.0.1:' + srv.address().port + '/';
   const browser = await chromium.launch();
@@ -969,6 +993,49 @@ if (CODE) {
     await page.reload();
     await page.waitForSelector('.gets');
     check('a malformed referral name is ignored', /client_reference_id=lili-01$/.test(await page.locator('.buy a.btn').first().getAttribute('href')));
+    await page.goto(base + '#home');
+    await page.reload();
+    await page.waitForSelector('.tabs');
+    check('the referral name is put back in the address, so a copied or re-opened link still carries it', /\?r=lili-01#home$/.test(page.url()), page.url());
+    await page.goto(base + '?r=lili-01#unlock');
+    await page.reload();
+    await page.waitForSelector('.gets');
+    await page.locator('#ref-box summary').click();
+    await page.fill('#ref', 'bad code!');
+    await page.locator('#refform button').click();
+    await page.waitForSelector('#refform .msg.bad');
+    check('a mistyped referral code is refused and the old one kept', /client_reference_id=lili-01$/.test(await page.locator('.buy a.btn').first().getAttribute('href')));
+    await page.fill('#ref', 'wang');
+    await page.locator('#refform button').click();
+    await page.waitForSelector('#refform .msg.ok');
+    check('a referral code typed by hand goes to the payment page and into the address', /client_reference_id=wang$/.test(await page.locator('.buy a.btn').first().getAttribute('href')) && /\?r=wang#unlock$/.test(page.url()), page.url());
+
+    // ---- the seller's sales report
+    {
+      const ask = async (body, env, method) => salesCore.handle(new Request('http://x/api/sales', { method: method || 'POST', body: method === 'GET' ? undefined : JSON.stringify(body) }), env || ENV, stripeStandIn);
+      check('sales report: no password, wrong password and GET are refused', (await ask({})).status === 403 && (await ask({ key: 'admin-password-012345678X' })).status === 403 && (await ask(null, ENV, 'GET')).status === 405);
+      check('sales report: off until a long admin password is set', (await ask({ key: 'short' }, Object.assign({}, ENV, { ADMIN_KEY: 'short' }))).status === 503 && (await ask({ key: '' }, Object.assign({}, ENV, { ADMIN_KEY: '' }))).status === 503);
+      let rep = await (await ask({ key: ENV.ADMIN_KEY })).json();
+      check('sales report: only paid, live payments made through our link, with who referred them and nothing about the buyer', rep.ok && rep.sales.length === 2 && rep.sales.every((x) => x.ref === 'lili-01') && rep.sales[0].amount === 1299 && Object.keys(rep.sales[0]).sort().join() === 'amount,currency,ref,t', JSON.stringify(rep).slice(0, 200));
+      reportMany = true;
+      rep = await (await ask({ key: ENV.ADMIN_KEY })).json();
+      check('sales report: reads every page, newest first, and drops malformed referrer names', rep.sales.length === 122 && !rep.more && rep.sales[0].t > rep.sales[121].t && rep.sales.filter((x) => x.ref === 'wang').length === 40 && rep.sales.filter((x) => x.ref === '').length === 80, rep.sales.length);
+      await page.goto(base + 'sales.html');
+      await page.fill('#k', 'nope-nope-nope-nope');
+      await page.locator('#f button').click();
+      await page.waitForFunction(() => document.getElementById('msg').textContent === '密码不对。');
+      check('sales page: a wrong password shows nothing', !(await page.locator('#out').isVisible()));
+      await page.fill('#k', ENV.ADMIN_KEY);
+      await page.locator('#f button').click();
+      await page.waitForSelector('#out:not([hidden])');
+      await page.selectOption('#m', 'all');
+      const byRows = await page.locator('#by tr').allInnerTexts();
+      check('sales page: one line per referrer with count, amount and commission; sales without referrer last', byRows.length === 3 && /^wang\s+40\s+519,60 €\s+155,88 €$/.test(byRows[0].trim()) && /^lili-01\s+2\s+25,98 €\s+7,79 €$/.test(byRows[1].trim()) && /没有推荐人/.test(byRows[2]) && /—$/.test(byRows[2].trim()), byRows.join(' | '));
+      await page.fill('#pc', '50');
+      check('sales page: the commission follows the percentage', /259,80 €$/.test((await page.locator('#by tr').first().innerText()).trim()));
+      check('sales page: no sideways scroll on a phone', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+      reportMany = false;
+    }
     await ctx.close();
   }
 

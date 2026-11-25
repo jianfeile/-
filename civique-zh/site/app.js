@@ -798,7 +798,7 @@
   }
   // ---- navigation: five tabs; every sub-page names the tab it belongs to
   function tabs(active) {
-    var items = [['home', '首页'], ['practice', '练习'], ['exam', '模考'], ['cards', '速记'], ['me', '我的']];
+    var items = [['home', '首页'], ['practice', '练习'], ['recall', '机经'], ['exam', '模考'], ['me', '我的']];
     return '<nav class="tabs" aria-label="主导航"><ul>' + items.map(function (it) {
       return '<li><a href="#' + it[0] + '"' + (active === it[0] ? ' aria-current="page"' : '') + '><span class="ic">' + hex() + icon(it[0]) + '</span><span>' + it[1] + '</span></a></li>';
     }).join('') + '</ul></nav>';
@@ -1150,6 +1150,12 @@
       '<div class="num"><b>' + t.done + '</b><span>/ ' + t.total + '<em>题</em></span></div>' + bar(t.done, t.total) +
       '<div class="cap"><b>' + (t.total ? Math.round(t.done / t.total * 100) : 0) + '%</b>' + (unlocked() ? '' : '<span>免费开放 ' + t.have + ' 题</span>') + '</div></div>' +
       readyTile(r) + '</div>' + weakRow(r) + (x ? examFact(x) : '');
+    // what candidates remember being asked: the reason many people come
+    if (DB.recall.length) {
+      var rcH = recallIds(), last = DB.recall[0].w.split('-');
+      out += '<a class="card rc-home" href="#recall">' + hexBadge(icon('recall'), 'solid') + '<span class="grow"><span class="t1">机经 · ' + DB.recall.length + ' 场考生回忆</span>' +
+        '<span class="t2">最近到 ' + last[0] + ' 年 ' + Number(last[1]) + ' 月 · 共 ' + rcH.ids.length + ' 道题 · 非官方</span></span><span class="go" aria-hidden="true">›</span></a>';
+    }
     out += '<div class="themes">' + THEMES.map(function (th) {
       var c = counts(th.id);
       return '<button class="theme tile t-' + th.id + (c.total && c.done >= c.total ? ' full' : '') + '" data-a="theme" data-v="' + th.id + '" aria-label="' + th.zh + '，已掌握 ' + c.done + ' / ' + c.total + '">' +
@@ -1235,7 +1241,7 @@
     out += '<section class="stack"><h2>专项</h2><div class="hub-grid">' +
       (situ ? tile('data-a="start" data-v="all|situ"', 'situ', '只练情景题', '还有 ' + situ + ' 题没掌握') : '') +
       tile('href="#mistakes"', 'mistakes', '错题本', nm ? '答对两次才移出' : '还没有错题', nm ? '<b class="dot">' + nm + '</b>' : '') +
-      tile('href="#recall"', 'recall', '机经', DB.recall.length ? DB.recall.length + ' 场考生回忆，非官方' : '考生回忆，非官方', rc.ids.length ? '<b class="dot calm">' + rc.ids.length + '</b>' : '') +
+      tile('href="#cards"', 'cards', '考点速记', DB.cards.length ? DB.cards.length + ' 张中文要点和生词' : '中文要点和生词') +
       tile('href="#sheet"', 'sheet', '考前一页', '免费 · 数字、年份、人名') + '</div></section>';
     return out + '</main>' + tabs('practice');
   }
@@ -1384,7 +1390,7 @@
   // 生词表: the words of the questions by theme; the French word can be heard, the Chinese can be hidden to test oneself
   function vWords() {
     if (!S.target) return vChoose();
-    var out = '<main class="wrap">' + pagehead('速记', levelChip()) + studyNav('words');
+    var out = '<main class="wrap">' + topbar('速记', 'practice', levelChip()) + studyNav('words');
     var n = 0, seen = {}, secs = '', mask = !!ui.wmask, shown = ui.wrev || {};
     THEMES.forEach(function (t) {
       var list = [];
@@ -1404,7 +1410,7 @@
     out += '<div class="w-bar"><p class="w-n"><b class="num">' + n + '</b> 个词' + (unlocked() ? '' : '<span class="tag">免费题里的</span>') + '</p>' +
       '<button class="chip" data-a="wmask" aria-pressed="' + mask + '">遮住中文</button></div>' + secs;
     if (!unlocked()) out += payBlock('解锁全部题目的生词');
-    return out + '</main>' + tabs('cards');
+    return out + '</main>' + tabs('practice');
   }
   function studyNav(active) {
     return '<div class="seg n3 study" role="group" aria-label="速记、生词和考前一页"><a href="#cards"' + (active === 'cards' ? ' aria-current="page"' : '') + '><b>考点速记</b></a><a href="#words"' + (active === 'words' ? ' aria-current="page"' : '') + '><b>生词表</b></a><a href="#sheet"' + (active === 'sheet' ? ' aria-current="page"' : '') + '><b>考前一页</b></a></div>';
@@ -1417,8 +1423,8 @@
   }
   function cardDeck() { return DB.cards.filter(function (c) { return !ui.cth || c.t === ui.cth; }); }
   function vCards() {
-    var out = '<main class="wrap">' + pagehead('速记', levelChip()) + studyNav('cards');
-    if (!DB.cards.length) return out + '<p class="note">考点速记正在整理中。</p></main>' + tabs('cards');
+    var out = '<main class="wrap">' + topbar('速记', 'practice', levelChip()) + studyNav('cards');
+    if (!DB.cards.length) return out + '<p class="note">考点速记正在整理中。</p></main>' + tabs('practice');
     if (ui.cth && theme(ui.cth).id !== ui.cth) ui.cth = '';
     var deck = cardDeck(), at = -1;
     deck.forEach(function (c, i) { if (c.id === ui.card) at = i; });
@@ -1452,7 +1458,7 @@
       }).join('') + '</ul></section>';
     });
     if (!unlocked()) out += payBlock('解锁全部 ' + DB.cards.length + ' 张考点速记');
-    return out + '</main>' + tabs('cards');
+    return out + '</main>' + tabs('practice');
   }
   // the page is drawn again after every tap: give the keyboard its place back
   function refocus(sel) {
@@ -1720,12 +1726,12 @@
     loadSheet();
     var know = 0, situ = 0;
     THEMES.forEach(function (t) { know += t.k; situ += t.s; });
-    var out = '<main class="wrap sheetpage">' + pagehead('速记', levelChip()) + studyNav('sheet') +
+    var out = '<main class="wrap sheetpage">' + topbar('速记', 'practice', levelChip()) + studyNav('sheet') +
       '<div class="sh-top"><p class="sub">只帮你记，不能代替做题。<a class="link" href="#home">去练题</a></p>' + (canPrint ? '<button class="chip" data-a="print">' + icon('sheet') + '打印</button>' : '') + '</div>' +
       '<ul class="nums sh-exam" aria-label="考试本身"><li><b>' + EXAM.n + '</b><span>题单选</span></li><li><b>' + EXAM.min + '</b><span>分钟</span></li>' +
       '<li class="pass"><b>' + EXAM.pass + '</b><span>题及格</span></li><li><b>' + know + '<i>+</i>' + situ + '</b><span>知识 + 情景</span></li></ul>';
     var d = DB.sheet;
-    if (!d) return out + (ui.sheetFail ? '<p class="note warn">这一页没有加载出来，请检查网络后刷新页面。</p>' : '<p class="sub center">正在加载…</p>') + disclaimer() + '</main>' + tabs('cards');
+    if (!d) return out + (ui.sheetFail ? '<p class="note warn">这一页没有加载出来，请检查网络后刷新页面。</p>' : '<p class="sub center">正在加载…</p>') + disclaimer() + '</main>' + tabs('practice');
     var used = {}, grp = function (id, how, skip) {
       var g = d.groups.filter(function (x) { return x.id === id; })[0];
       if (!g || used[id]) return '';
@@ -1747,7 +1753,7 @@
         d.rule.points.map(function (x) { var cut = x.indexOf('。') + 1; return '<li>' + (cut > 0 && cut < x.length ? '<b>' + esc(x.slice(0, cut)) + '</b>' + esc(x.slice(cut)) : esc(x)) + '</li>'; }).join('') + '</ol></section>';
     }
     out += '<p class="small sh-asof">整理于 ' + esc(d.asof) + '</p>';
-    return out + disclaimer() + '</main>' + tabs('cards');
+    return out + disclaimer() + '</main>' + tabs('practice');
   }
   function lockMark() { return icon('lock', 'lockm'); }
   // 机经: what candidates said they were asked, by exam month. Nothing identifies who said it.
@@ -1768,9 +1774,9 @@
     return '<li class="rq t-' + esc(x.t) + '"><div class="qrow"><span class="i">' + n + '</span><span class="s zhs">' + esc(x.x) + '</span><span class="m"></span><span class="rq-x"><span class="tag' + (x.k === 's' ? '' : ' g') + '">' + (x.k === 's' ? '情景题' : '知识题') + '</span></span></div></li>';
   }
   function vRecall() {
-    var out = '<main class="wrap">' + topbar('机经', 'practice') +
+    var out = '<main class="wrap">' + pagehead('机经', levelChip()) +
       '<p class="rc-note"><b class="hex-b">非官方</b>来源于网络的考生回忆，不是官方题目，可能有出入。</p>';
-    if (!DB.recall.length) return out + '<div class="card empty">' + six('sleep', 96) + '<p>还没有收录。收集到考生的回忆后会更新在这里。</p></div></main>' + tabs('practice');
+    if (!DB.recall.length) return out + '<div class="card empty">' + six('sleep', 96) + '<p>还没有收录。收集到考生的回忆后会更新在这里。</p></div></main>' + tabs('recall');
     var rc = recallIds(), hot = rc.ids.filter(function (id) { return rc.n[id] >= 2; });
     var can = rc.ids.filter(function (id) { return DB.byId[id]; });
     out += '<section class="hero rc-hero">' + heroDeco() + '<ul class="rc-nums"><li><b>' + DB.recall.length + '</b><span>场考试</span></li><li><b>' + rc.ids.length + '</b><span>道题</span></li>' +
@@ -1792,7 +1798,7 @@
     });
     out += '</ul></li></ol>';
     if (!unlocked()) out += payBlock('解锁后可以看每道题的讲解');
-    return out + '</main>' + tabs('practice');
+    return out + '</main>' + tabs('recall');
   }
   // ---------------------------------------------------------------- registering for the real exam
   // The centre list is the public list of France Éducation International (data/centres.json). Booking and payment

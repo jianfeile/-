@@ -586,12 +586,13 @@ if (CODE) {
   await page.goto(base);
   await page.locator('[data-a="target"][data-v="cr"]').click();
   await page.waitForSelector('.themes');
-  await page.locator('.tabs a[href="#cards"]').click();
+  await page.locator('.tabs a[href="#practice"]').click();
+  await page.locator('.hub-tile[href="#cards"]').click();
   await page.waitForSelector('.seg a[href="#sheet"]');
   await page.locator('.seg a[href="#sheet"]').click();
   await page.waitForSelector('.sh-card');
-  check('the sheet opens from the switch on the cards page, free, with 速记 still highlighted',
-    await page.locator('.seg a[href="#sheet"][aria-current="page"]').count() === 1 && await page.locator('.tabs a[href="#cards"][aria-current="page"]').count() === 1 &&
+  check('the sheet opens from the switch on the cards page, free, with 练习 still highlighted',
+    await page.locator('.seg a[href="#sheet"][aria-current="page"]').count() === 1 && await page.locator('.tabs a[href="#practice"][aria-current="page"]').count() === 1 &&
     await page.locator('.sheetpage .pay, .sheetpage [data-a="locked"]').count() === 0 && await page.locator('.sheetpage .foot').count() === 1 && await page.locator('.sheetpage a[href="#home"]').count() === 1);
   // a group is a card, a row of tiles or a drawing: whatever it is, its title and every key, meaning and French term are in the text of the page
   const squash = (s) => String(s).replace(/\s+/g, '');
@@ -1508,16 +1509,17 @@ if (CODE) {
   await page.goto(base);
   await page.locator('[data-a="target"][data-v="csp"]').click();
   await page.waitForSelector('.themes');
-  check('five tabs: 首页 练习 模考 速记 我的', (await page.locator('.tabs li').allInnerTexts()).map((t) => t.trim()).join(' ') === '首页 练习 模考 速记 我的' && (await page.locator('.tabs a').evaluateAll((els) => els.map((a) => a.getAttribute('href')))).join() === '#home,#practice,#exam,#cards,#me');
+  check('five tabs: 首页 练习 机经 模考 我的', (await page.locator('.tabs li').allInnerTexts()).map((t) => t.trim()).join(' ') === '首页 练习 机经 模考 我的' && (await page.locator('.tabs a').evaluateAll((els) => els.map((a) => a.getAttribute('href')))).join() === '#home,#practice,#recall,#exam,#me');
+  check('home: the recollections are one tap away, above the themes', await page.locator('.rc-home[href="#recall"]').count() === 1 && /机经 · \d+ 场考生回忆/.test(await page.locator('.rc-home').innerText()) && await page.evaluate(() => !!(document.querySelector('.rc-home').compareDocumentPosition(document.querySelector('.themes')) & Node.DOCUMENT_POSITION_FOLLOWING)));
   {
-    const parent = { home: 'home', practice: 'practice', mistakes: 'practice', recall: 'practice', exam: 'exam', cards: 'cards', words: 'cards', sheet: 'cards', me: 'me', register: 'me', check: 'me', about: 'me', unlock: 'me' };
+    const parent = { home: 'home', practice: 'practice', mistakes: 'practice', recall: 'recall', exam: 'exam', cards: 'practice', words: 'practice', sheet: 'practice', me: 'me', register: 'me', check: 'me', about: 'me', unlock: 'me' };
     const wrong = [], noBack = [];
     for (const r of Object.keys(parent)) {
       await page.goto(base + '#' + r);
       await page.waitForFunction((h) => location.hash === '#' + h && document.querySelector('.tabs'), r);
       const cur = await page.locator('.tabs a[aria-current="page"]').evaluateAll((els) => els.map((a) => a.getAttribute('href')).join());
       if (cur !== '#' + parent[r]) wrong.push(r + ' -> ' + cur);
-      if (['mistakes', 'recall', 'register', 'check', 'about'].includes(r) && await page.locator('.topbar a.back[href="#' + parent[r] + '"]').count() !== 1) noBack.push(r);
+      if (['mistakes', 'cards', 'words', 'sheet', 'register', 'check', 'about'].includes(r) && await page.locator('.topbar a.back[href="#' + parent[r] + '"]').count() !== 1) noBack.push(r);
       if (!(await noOverflow(page))) wrong.push(r + ' overflows');
     }
     check('every page highlights the tab it belongs to, old routes still open', wrong.length === 0, wrong.join(' | '));
@@ -1525,10 +1527,10 @@ if (CODE) {
   }
   await page.goto(base + '#practice');
   await page.waitForSelector('.hub-grid');
-  check('practice hub: five themes with a start button each, scenario-only, mistakes, recollections, the sheet',
+  check('practice hub: five themes with a start button each, scenario-only, mistakes, the cards, the sheet',
     await page.locator('.th-row').count() === 5 && await page.locator('.th-row [data-a="start"]').count() === 5 && await page.locator('.th-row [data-a="theme"]').count() === 5 &&
     await page.locator('.hub-grid [data-a="start"][data-v="all|situ"]').count() === 1 && await page.locator('.hub-grid a[href="#sheet"]').count() === 1 &&
-    await page.locator('.hub-grid a[href="#mistakes"]').count() === 1 && await page.locator('.hub-grid a[href="#recall"]').count() === 1 && /非官方/.test(await page.locator('.hub-grid a[href="#recall"]').innerText()));
+    await page.locator('.hub-grid a[href="#mistakes"]').count() === 1 && await page.locator('.hub-grid a[href="#cards"]').count() === 1 && await page.locator('.hub-grid a[href="#recall"]').count() === 0);
   await page.locator('.hub-grid [data-a="start"][data-v="all|situ"]').click();
   await page.waitForSelector('.stem');
   st = await state(page);

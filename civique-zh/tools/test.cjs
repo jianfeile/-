@@ -945,7 +945,13 @@ if (CODE) {
     const asof = await page.locator('.bank-asof').innerText();
     check('about: date of the bank, date the official list was read, number of questions', asof.includes('题库更新于 ' + free.built) && asof.includes('官方题目清单查阅于 ' + free.consulted) && asof.includes(String(free.meta.total)), asof);
     // no contact in the settings: the question number in a sheet, with a copy button
+    await page.addInitScript(() => {
+      let cfg;
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '' }); } });
+    });
     await page.goto(base + '#home');
+    await page.reload();
+    await page.waitForSelector('[data-a="continue"]');
     await page.locator('[data-a="continue"]').click();
     await page.waitForSelector('.stem');
     const qidStem = (await page.locator(".stem").first().innerText()).trim(), qid = free.qs.find((x) => x.q === qidStem).id;

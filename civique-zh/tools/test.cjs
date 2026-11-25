@@ -111,6 +111,11 @@ if (CODE) {
   const errors = [];
   async function fresh(opts) {
     const ctx = await browser.newContext(Object.assign({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 1, locale: 'zh-CN', serviceWorkers: 'block' }, opts || {}));
+    // the tests describe a site with no payment link and no contact yet; the ones about those set their own
+    await ctx.addInitScript(() => {
+      let cfg;
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '' }); } });
+    });
     const page = await ctx.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.g|ERR_|Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -947,7 +952,7 @@ if (CODE) {
     // no contact in the settings: the question number in a sheet, with a copy button
     await page.addInitScript(() => {
       let cfg;
-      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '' }); } });
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '' }); } });
     });
     await page.goto(base + '#home');
     await page.reload();

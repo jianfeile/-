@@ -55,6 +55,10 @@ cd site && python3 -m http.server 8080      # 打开 http://localhost:8080
    - `CONTENT_KEY`：题库密钥，`node tools/bank.mjs key --code XXXX-XXXX-XXXX` 的输出。
    可选：`PAYMENT_LINK`（`plink_...`，只认这一个收款链接的付款）、`REVOKED`（作废的解锁码，逗号分隔）。
 
+### 发布前
+
+改了 `site/` 里的脚本或样式后，先运行 `node tools/stamp.mjs`：它把每个文件的指纹写进页面（`app.js?v=…`），手机就不会继续用缓存里的旧文件。测试会检查指纹是否最新。
+
 ### 管理后台、使用记录、题库更正
 
 - 需要一个 Cloudflare D1 数据库，在 `wrangler.toml` 里绑定为 `DB`。没有绑定时网站照常工作，只是不记录。表在第一次使用时自动建立（`server/store.mjs`）。

@@ -1989,6 +1989,11 @@ if (CODE) {
     await ctx.close();
   }
 
+  {
+    let ok = true;
+    try { require('child_process').execFileSync('node', [path.resolve(__dirname, 'stamp.mjs'), '--check'], { stdio: 'pipe' }); } catch (e) { ok = false; }
+    check('release: every page loads its scripts and styles by their current fingerprint (run node tools/stamp.mjs)', ok);
+  }
   console.log('layouts');
   ({ ctx, page } = await fresh({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' }));
   await page.goto(base);

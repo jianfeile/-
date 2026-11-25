@@ -1018,6 +1018,13 @@ if (CODE) {
     await page.locator('#have-code summary').click();
     check('unlock page: "I already have a code" opens the form', await page.locator('#code').isVisible());
     check('unlock page: the terms of sale are one tap away and say that access is immediate with no withdrawal', await page.locator('.offer-after a[href="conditions.html"]').count() === 1 && /L221-28/.test(fs.readFileSync(path.join(SITE, 'conditions.html'), 'utf8')));
+    await page.goto(base + '#home');
+    await page.waitForSelector('.hero.home');
+    const order = await page.evaluate(() => { const pay = document.querySelector('.pay'), hero = document.querySelector('.hero.home'); return pay && hero ? !!(pay.compareDocumentPosition(hero) & Node.DOCUMENT_POSITION_FOLLOWING) : null; });
+    const homePay = await page.locator('.pay .buy a.btn').getAttribute('href');
+    check('home: the offer is the first thing on the page and its button goes straight to the payment page', order === true && homePay.startsWith('https://pay.example.com/x') && (await page.locator('.pay .buy a.btn').innerText()).includes(price) && await page.locator('.pay').count() === 1 && await page.locator('.pay-more a[href="conditions.html"]').count() === 1 && await noOverflow(page), homePay);
+    await page.goto(base + '#unlock');
+    await page.waitForSelector('.gets');
     check('no referral link, no referral name on the pay button', !/client_reference_id/.test(await page.locator('.buy a.btn').first().getAttribute('href')));
     await page.goto(base + '?r=lili-01#unlock');
     await page.reload();

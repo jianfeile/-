@@ -816,15 +816,17 @@
     var w = total ? Math.round(done / total * 1000) / 10 : 0;
     return '<div class="bar ' + (cls || '') + '" role="img" aria-label="' + done + ' / ' + total + '"><i style="width:' + w + '%"></i></div>';
   }
-  function payBlock(lead) {
-    var d = offerData();
-    return '<section class="card pay"><div class="pay-head">' + six('cheer', 0, '', { mini: true }) + '<h2>' + esc(lead || '解锁全部题目') + '</h2></div>' +
+  // The offer. Its button goes straight to the payment page: one tap from wherever the block is shown.
+  function payBlock(lead, hot) {
+    var d = offerData(), direct = !!CFG.payUrl;
+    return '<section class="card pay' + (hot ? ' hot' : '') + '"><div class="pay-head">' + six('cheer', 0, '', { mini: true }) + '<h2>' + esc(lead || '解锁全部题目') + '</h2></div>' +
       '<ul class="pay-facts">' +
       '<li><b>' + d.total + '</b><span>' + '道题带讲解' + '</span></li>' +
       (d.cards ? '<li><b>' + d.cards + '</b><span>张考点速记</span></li>' : '') +
       '<li><b>' + EXAM.n + '</b><span>题完整模考</span></li></ul>' +
-      (CFG.price ? buyButton('#unlock', '解锁全部')
-        : '<div class="buy"><a class="btn wide" href="#unlock">去解锁</a><p class="buy-terms">一次性付款，不是订阅</p></div>') + '</section>';
+      (CFG.price ? buyButton(direct ? payHref() : '#unlock', direct ? '立即解锁' : '解锁全部')
+        : '<div class="buy"><a class="btn wide" href="#unlock">去解锁</a><p class="buy-terms">一次性付款，不是订阅</p></div>') +
+      (direct ? '<p class="pay-more"><a href="#unlock">已有解锁码</a><a href="#unlock">买过了，找回</a><a href="conditions.html" target="_blank" rel="noopener">购买条款</a></p>' : '') + '</section>';
   }
   function modal() {
     var m = ui.modal; if (!m) return '';
@@ -1134,6 +1136,7 @@
     var out = '<main class="wrap">' + pagehead('<span class="h-opt">今天</span>' + (began ? '继续闯关' : '开始闯关'), levelChip() + countChip(), 'h-head');
     if (ui.netFail) out += '<p class="note warn">已购买的题库这次没有加载出来，目前只显示免费题。请检查网络后刷新页面。</p>';
     if (ui.revoked) out += '<p class="note warn">这台设备保存的解锁码已失效，请重新输入解锁码或联系卖家。</p>';
+    if (!unlocked()) out += payBlock('解锁全部内容', true);        // first thing on the page until the bank is unlocked, then gone
     // today's goal, with 小玛 inside the ring
     var say = !p.goal ? (unlocked() ? '全部掌握了，去模考吧' : '免费题都掌握了') : (hit ? '今天达标了！' : (p.done ? '再做 <b>' + (p.goal - p.done) + '</b> 题就达标！' : '今天做 <b>' + p.goal + '</b> 题'));
     out += '<section class="hero home">' + heroDeco() + '<div class="hero-top">' +
@@ -1153,7 +1156,6 @@
         '<span class="ti hexic white">' + hex() + icon(th.id) + '</span><span class="cnt">' + c.done + '<small> / ' + c.total + '</small></span>' +
         '<span class="t1">' + th.zh + '</span>' + bar(c.done, c.total, 'on-c') + '</button>';
     }).join('') + '</div>';
-    if (!unlocked()) out += payBlock('解锁全部内容');
     return out + disclaimer() + '</main>' + tabs('home');
   }
   function themeSheet(tid) {

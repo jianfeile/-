@@ -6,7 +6,8 @@
 //
 // Settings: DB (D1 binding), CONTENT_KEY (corrections to paid questions are encrypted with it), ADMIN_KEY.
 import { codeIsValid, normCode, makeCode, fmtCode } from './unlock-core.mjs';
-import { ensure, clip, refOk, parisDay } from './store.mjs';
+import { ensure, clip, refOk, parisDay, deviceLimit } from './store.mjs';
+import { authorize, statusOf } from './auth.mjs';
 
 const enc = new TextEncoder();
 const json = (obj, status = 200, extra) => new Response(JSON.stringify(obj), {
@@ -15,12 +16,6 @@ const json = (obj, status = 200, extra) => new Response(JSON.stringify(obj), {
 const MAX_BODY = 400000;
 const FIELDS = { q: 'text', qz: 'text', e: 'text', o: 'four', oz: 'four' };     // what a correction may change
 
-async function same(a, b) {
-  const [x, y] = await Promise.all([a, b].map(async (s) => new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(String(s))))));
-  let d = 0;
-  for (let i = 0; i < x.length; i++) d |= x[i] ^ y[i];
-  return d === 0;
-}
 async function readBody(request) {
   const text = await request.text();
   if (text.length > MAX_BODY) return null;
@@ -125,12 +120,13 @@ export async function patches(request, env) {
 const LIST = 'id, login, email, ref, created, paid_at, last_seen, country, city, ua, level, exam_date, unlocked, sum, (SELECT COUNT(*) FROM days WHERE days.user = users.id) AS days';
 export async function admin(request, env) {
   if (request.method !== 'POST') return json({ error: 'method' }, 405);
-  if (String(env.ADMIN_KEY || '').length < 16) return json({ error: 'not_configured' }, 503);
   const body = await readBody(request);
-  if (!body || typeof body.key !== 'string' || !(await same(body.key, env.ADMIN_KEY))) return json({ error: 'forbidden' }, 403);
+  const auth = await authorize(body, env);
+  if (!auth.ok) return json({ error: auth.error }, statusOf(auth.error));
+  const op = body.op;
+  if (op === 'login') return json({ ok: true, token: auth.token || body.token, exp: auth.exp || 0 });
   const d = await ensure(env);
   if (!d) return json({ error: 'no_database' }, 503);
-  const op = body.op;
   if (op === 'users') {
     const rows = (await d.prepare('SELECT ' + LIST + ' FROM users ORDER BY last_seen DESC LIMIT 3000').all()).results || [];
     return json({ ok: true, users: rows.map((r) => Object.assign(r, { sum: r.sum ? JSON.parse(r.sum) : null })) });
@@ -139,7 +135,8 @@ export async function admin(request, env) {
     const r = await d.prepare('SELECT ' + LIST + ', state FROM users WHERE id = ?1').bind(String(body.id || '')).first();
     if (!r) return json({ error: 'not_found' }, 404);
     const days = (await d.prepare('SELECT day, n FROM days WHERE user = ?1 ORDER BY day DESC LIMIT 400').bind(r.id).all()).results || [];
-    return json({ ok: true, user: Object.assign(r, { sum: r.sum ? JSON.parse(r.sum) : null, state: r.state ? JSON.parse(r.state) : null }), days });
+    const devs = r.id.startsWith('b:') ? ((await d.prepare('SELECT COUNT(*) AS n FROM code_devices WHERE code = ?1').bind(r.id.slice(2)).first()) || {}).n || 0 : 0;
+    return json({ ok: true, devices: devs, limit: deviceLimit(env), user: Object.assign(r, { sum: r.sum ? JSON.parse(r.sum) : null, state: r.state ? JSON.parse(r.state) : null }), days });
   }
   if (op === 'user-del') {          // someone asked for their record to be erased
     const id = String(body.id || '');
@@ -160,7 +157,7 @@ export async function admin(request, env) {
   if (op === 'code-del' || op === 'code-reset') {
     const code = normCode(body.code);
     if (!code) return json({ error: 'bad_request' }, 400);
-    if (op === 'code-reset') await d.prepare('UPDATE codes SET used_by = NULL, used_at = NULL WHERE code = ?1').bind(code).run();   // a buyer changed phone
+    if (op === 'code-reset') await d.batch([d.prepare('UPDATE codes SET used_by = NULL, used_at = NULL WHERE code = ?1').bind(code), d.prepare('DELETE FROM code_devices WHERE code = ?1').bind(code)]);   // a buyer changed phone
     // cancelling also works for a code issued after a payment, which is not in the list until now
     else await d.prepare('INSERT INTO codes (code, note, created, revoked) VALUES (?1, ?2, ?3, 1) ON CONFLICT(code) DO UPDATE SET revoked = 1').bind(code, '付款后发的码', Date.now()).run();
     return json({ ok: true });

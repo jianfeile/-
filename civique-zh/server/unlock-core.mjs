@@ -14,6 +14,7 @@
 // optional:
 //   PAYMENT_LINK  plink_... id: only payments made through this link count
 //   REVOKED       unlock codes that no longer work, separated by commas or spaces
+//   DEVICE_LIMIT  on how many devices one purchase may be unlocked (3 unless set; needs DB)
 //   ALLOW_TEST    "1" to accept Stripe test-mode payments (never on the public site)
 //   DB            a D1 database binding: buyers are then listed in the admin page (see store.mjs)
 //
@@ -81,9 +82,11 @@ function state(s, env) {
   if (s.payment_status === 'paid' || s.payment_status === 'no_payment_required') return 'paid';
   return 'pending';
 }
-async function grant(env, session) {
+async function grant(env, session, device) {
   const code = await codeForSession(env, session.id);
-  if (revoked(env, code) || (await codeGate(env, code, null)) === 'revoked') return json({ error: 'revoked' }, 403);
+  const gate = revoked(env, code) ? 'revoked' : await codeGate(env, code, device);
+  if (gate === 'revoked') return json({ error: 'revoked' }, 403);
+  if (gate === 'limit') return json({ error: 'limit' }, 409);
   await rememberBuyer(env, code, { email: (session.customer_details || {}).email || '', ref: session.client_reference_id || '', paidAt: session.created ? session.created * 1000 : null });
   return json({ ok: true, code: fmtCode(code), k: env.CONTENT_KEY });
 }
@@ -106,7 +109,7 @@ export async function handle(request, env, fetchImpl = fetch) {
       const st = state(r.body, env);
       if (st === 'pending') return json({ error: 'pending' }, 409);
       if (st !== 'paid') return json({ error: 'not_paid' }, 402);
-      return grant(env, r.body);
+      return grant(env, r.body, body.device);
     }
     if (typeof body.code === 'string') {
       const code = normCode(body.code);
@@ -114,7 +117,7 @@ export async function handle(request, env, fetchImpl = fetch) {
       if (revoked(env, code)) return json({ error: 'revoked' }, 403);
       const gate = await codeGate(env, code, body.device);
       if (gate === 'revoked') return json({ error: 'revoked' }, 403);
-      if (gate === 'used') return json({ error: 'used' }, 409);
+      if (gate === 'used' || gate === 'limit') return json({ error: gate }, 409);
       return json({ ok: true, code: fmtCode(code), k: env.CONTENT_KEY });
     }
     if (typeof body.email === 'string') {
@@ -126,7 +129,7 @@ export async function handle(request, env, fetchImpl = fetch) {
         const r = await stripe(env, q, fetchImpl);
         if (r.status !== 200) return json({ error: 'payment_service' }, 502);
         const hit = (r.body.data || []).find((s) => state(s, env) === 'paid');
-        if (hit) return grant(env, hit);
+        if (hit) return grant(env, hit, body.device);
       }
       return json({ error: 'not_found' }, 404);
     }

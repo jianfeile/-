@@ -45,6 +45,7 @@ function d1() {
   return { prepare: (sql) => stmt(sql, []), batch: async (list) => { for (const x of list) await x.run(); return []; } };
 }
 ENV.DB = d1();
+ENV.DEVICE_LIMIT = '20';          // the walk below unlocks the same purchase in many fresh browsers; the limit has its own checks
 const CF = { country: 'FR', city: 'Lyon' };
 async function stripeStandIn(url, opts) {
   const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -1258,6 +1259,58 @@ if (CODE) {
     await page.waitForFunction(() => /已作废。$/.test(document.getElementById('msg').textContent));
     check('admin page: cancelling a code asks twice, then it is cancelled', (await adm('codes')).codes.find((c) => c.code === shownCodes[0]).revoked === true);
     check('admin page: the codes tab fits a phone', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    await ctx.close();
+  }
+
+  // ---- the admin pages behind an authenticator code; a purchase on a few devices only
+  console.log('authenticator, device limit');
+  {
+    const auth = await import(require('url').pathToFileURL(path.resolve(__dirname, '..', 'server', 'auth.mjs')).href);
+    check('authenticator: the codes are the standard ones (RFC 6238 test value)', await auth.totp('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 59000) === '287082');
+    const SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DP', E2 = Object.assign({}, ENV, { ADMIN_TOTP: SECRET });
+    const call = async (body, env) => adminCore.admin(new Request('http://x/api/admin', { method: 'POST', body: JSON.stringify(body) }), env, CF);
+    const now = await auth.totp(SECRET, Date.now());
+    check('authenticator: the password alone is no longer enough', (await (await call({ key: ENV.ADMIN_KEY, op: 'users' }, E2)).json()).error === 'otp_required');
+    check('authenticator: a wrong code is refused', (await (await call({ key: ENV.ADMIN_KEY, otp: now === '000000' ? '111111' : '000000', op: 'users' }, E2)).json()).error === 'bad_otp');
+    const login = await (await call({ key: ENV.ADMIN_KEY, otp: now, op: 'login' }, E2)).json();
+    check('authenticator: password and code give a pass for the session', login.ok && /^\d{13}\.[0-9a-f]{64}$/.test(login.token), JSON.stringify(login).slice(0, 80));
+    check('authenticator: the pass works without the password, a forged or foreign one does not', (await (await call({ token: login.token, op: 'users' }, E2)).json()).ok === true
+      && (await call({ token: login.token.replace(/.$/, (c) => (c === '0' ? '1' : '0')), op: 'users' }, E2)).status === 403 && (await call({ token: login.token, op: 'users' }, ENV)).status === 403);
+    const old = (Date.now() - 1000) + '.' + 'ab'.repeat(32);
+    check('authenticator: a pass with a changed date is refused', (await call({ token: old, op: 'users' }, E2)).status === 403);
+    const expired = await auth.newToken(E2, Date.now() - 13 * 3600000);
+    check('authenticator: a pass ends after twelve hours', (await (await call({ token: expired.token, op: 'users' }, E2)).json()).error === 'expired');
+    check('authenticator: the sales report asks for it too', (await (await salesCore.handle(new Request('http://x/api/sales', { method: 'POST', body: JSON.stringify({ key: ENV.ADMIN_KEY }) }), E2, stripeStandIn)).json()).error === 'otp_required'
+      && (await (await salesCore.handle(new Request('http://x/api/sales', { method: 'POST', body: JSON.stringify({ token: login.token }) }), E2, stripeStandIn)).json()).ok === true);
+
+    const E3 = Object.assign({}, ENV, { DEVICE_LIMIT: undefined });
+    const unlock = async (body) => core.handle(new Request('http://x/api/unlock', { method: 'POST', body: JSON.stringify(body) }), E3, stripeStandIn);
+    const adm = async (op, more) => (await call(Object.assign({ key: ENV.ADMIN_KEY, op }, more || {}), E3)).json();
+    await adm('code-reset', { code: await core.codeForSession(ENV, 'cs_live_PAID00000001') });
+    const devs = ['1', '2', '3', '4'].map((x) => x.repeat(16));
+    const paid = (await (await unlock({ session: 'cs_live_PAID00000001', device: devs[0] })).json()).code;
+    await adm('code-reset', { code: paid });
+    const got = [];
+    for (const dv of devs) got.push((await unlock({ email: 'buyer@example.com', device: dv })).status);
+    check('device limit: a purchase unlocks three devices, the fourth is refused', got.join() === '200,200,200,409', got.join());
+    check('device limit: the same three keep working, by code as well', (await unlock({ code: paid, device: devs[1] })).status === 200 && (await unlock({ code: paid, device: devs[3] })).status === 409 && (await (await unlock({ code: paid, device: devs[3] })).json()).error === 'limit');
+    const who = await adm('user', { id: 'b:' + paid.replace(/-/g, '') });
+    check('device limit: the seller sees how many devices a buyer uses', who.devices === 3 && who.limit === 3, JSON.stringify({ d: who.devices, l: who.limit }));
+    await adm('code-reset', { code: paid });
+    check('device limit: after the seller clears them, a new phone gets in', (await unlock({ code: paid, device: devs[3] })).status === 200);
+    await adm('code-reset', { code: paid });
+
+    ({ ctx, page } = await fresh());
+    await page.goto(base + 'admin.html');
+    await page.fill('#k', ENV.ADMIN_KEY);
+    await page.locator('#f button').click();
+    await page.waitForSelector('#main:not([hidden])');
+    await page.reload();
+    await page.waitForSelector('#main:not([hidden])');
+    check('admin page: a reload does not ask for the password again, and the password is not what is kept', (await page.evaluate(() => sessionStorage.getItem('civique.admin'))) !== ENV.ADMIN_KEY && /^\d{13}\./.test(await page.evaluate(() => sessionStorage.getItem('civique.admin'))));
+    await page.goto(base + 'sales.html');
+    await page.waitForSelector('#out:not([hidden])');
+    check('sales page: opens with the same pass', true);
     await ctx.close();
   }
 

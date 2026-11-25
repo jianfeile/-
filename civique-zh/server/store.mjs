@@ -8,6 +8,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS days (user TEXT, day TEXT, n INTEGER, PRIMARY KEY (user, day))`,
   `CREATE TABLE IF NOT EXISTS patches (qid TEXT PRIMARY KEY, free INTEGER, data TEXT, t INTEGER)`,
   // codes the seller made by hand (one device each), and any code the seller cancelled
+  // the devices on which a code issued after a payment was used (a purchase is for one person: a few devices, not a crowd)
+  `CREATE TABLE IF NOT EXISTS code_devices (code TEXT, device TEXT, t INTEGER, PRIMARY KEY (code, device))`,
   `CREATE TABLE IF NOT EXISTS codes (code TEXT PRIMARY KEY, note TEXT, created INTEGER, used_at INTEGER, used_by TEXT, revoked INTEGER DEFAULT 0)`,
 ];
 let ready = null;
@@ -40,17 +42,25 @@ export async function rememberBuyer(env, code, info) {
   } catch { /* the database is optional */ }
 }
 
-// A code in the seller's list works on one device: the first that uses it. 'ok' | 'used' | 'revoked'.
-// Codes that are not in the list (those issued after a payment) are not limited here.
+export function deviceLimit(env) { const n = Math.floor(Number(env && env.DEVICE_LIMIT)); return n >= 1 && n <= 20 ? n : 3; }
+// A code in the seller's list works on one device: the first that uses it. A code issued after a payment works on a few
+// (DEVICE_LIMIT, 3 unless set). 'ok' | 'used' | 'limit' | 'revoked'. A request that names no device is not counted.
 export async function codeGate(env, code, device) {
   try {
     const d = await ensure(env);
     if (!d) return 'ok';
     const read = () => d.prepare('SELECT used_by, revoked FROM codes WHERE code = ?1').bind(code).first();
     let row = await read();
-    if (!row) return 'ok';
-    if (row.revoked) return 'revoked';
     const dev = typeof device === 'string' && /^[a-f0-9]{16,32}$/.test(device) ? device : '';
+    if (!row) {
+      if (!dev) return 'ok';
+      const have = (await d.prepare('SELECT device FROM code_devices WHERE code = ?1').bind(code).all()).results || [];
+      if (have.some((x) => x.device === dev)) return 'ok';
+      if (have.length >= deviceLimit(env)) return 'limit';
+      await d.prepare('INSERT OR IGNORE INTO code_devices (code, device, t) VALUES (?1, ?2, ?3)').bind(code, dev, Date.now()).run();
+      return 'ok';
+    }
+    if (row.revoked) return 'revoked';
     if (!row.used_by) {
       if (!dev) return 'used';
       await d.prepare('UPDATE codes SET used_by = ?2, used_at = ?3 WHERE code = ?1 AND used_by IS NULL').bind(code, dev, Date.now()).run();

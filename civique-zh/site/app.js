@@ -394,6 +394,7 @@
   // The site's own /api/unlock (only on deployments that have it) checks online payments and the codes it issued.
   function ask(payload) {
     if (!CFG.api) return Promise.resolve({ error: 'no_api' });
+    if (!payload.device) payload.device = deviceId();          // a purchase is for a few devices, a hand-made code for one
     return fetch(CFG.api, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }).then(function (r) {
       return r.json().catch(function () { return { error: 'server' }; });
     }, function () { return { error: 'network' }; });
@@ -420,7 +421,7 @@
     function online() {
       if (!CFG.api) return 'unknown';
       return unlockViaServer({ code: fmtCode(code), device: deviceId() }).then(function (r) {
-        return r === 'ok' || r === 'network' || r === 'used' ? r : (r === 'bad_code' || r === 'revoked' ? 'unknown' : 'server');
+        return r === 'ok' || r === 'network' || r === 'used' || r === 'limit' ? r : (r === 'bad_code' || r === 'revoked' ? 'unknown' : 'server');
       });
     }
     return loadBankFile().then(function (bank) {
@@ -443,7 +444,7 @@
         var code = S.unlock.code;
         if (!CFG.api || !normCode(code)) return;
         ask({ code: code, device: deviceId() }).then(function (res) {
-          if (!res || (res.error !== 'revoked' && res.error !== 'used') || !S.unlock || S.unlock.code !== code) return;
+          if (!res || (res.error !== 'revoked' && res.error !== 'used' && res.error !== 'limit') || !S.unlock || S.unlock.code !== code) return;
           S.unlock = null; S.sess = null; S.exam = null; DB.bank = null; useQuestions(); sanitize(); save();
           ui.revoked = true; render(true);
         });
@@ -486,6 +487,7 @@
     });
   }
   function payError(r) {
+    if (r === 'limit') return limitText();
     if (r === 'pending') return '付款还在处理中。请等一两分钟，再点“重新确认”。';
     if (r === 'not_paid') return '这笔付款没有完成，不会扣款。需要的话可以重新付款。';
     if (r === 'not_found') return '没有找到这笔付款记录。如果你已经付款，请用下面的“找回解锁码”。';
@@ -494,6 +496,7 @@
     return '暂时无法确认付款。请稍后点“重新确认”，不用再付一次。';
   }
   function mailError(r) {
+    if (r === 'limit') return limitText();
     if (r === 'bad_email') return '邮箱格式不对，请检查后再试。';
     if (r === 'not_found' || r === 'not_paid') return '没有找到这个邮箱的付款记录。请填付款时用的那个邮箱。';
     if (r === 'network') return '网络不通，请检查网络后重试。';
@@ -520,7 +523,9 @@
     u += (u.indexOf('?') < 0 ? '?' : '&') + 'locale=zh';
     return refOk(ref) ? u + '&client_reference_id=' + ref : u;
   }
+  function limitText() { return '这次购买已经在几台设备上解锁，达到上限了' + (CFG.contact ? '。换了手机请联系 ' + CFG.contact : '') + '。'; }
   function codeError(r) {
+    if (r === 'limit') return limitText();
     if (r === 'used') return '这个解锁码已经在另一台设备上用过了。一个解锁码只能用在一台设备上' + (CFG.contact ? '，换了手机请联系 ' + CFG.contact : '') + '。';
     if (r === 'format') return '解锁码是 12 位字母和数字，例如 ABCD-2345-EFGH，请检查后再试。';
     if (r === 'unknown') return '这个解锁码不对或已失效，请核对后再试' + (CFG.contact ? '，或联系 ' + CFG.contact : '') + '。';

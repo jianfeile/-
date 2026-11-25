@@ -1,32 +1,28 @@
 // The seller's own sales report: who brought each sale. Same runtime as unlock-core.mjs.
 //
-// POST /api/sales { "key": "<ADMIN_KEY>" }
+// POST /api/sales { "key": "<ADMIN_KEY>", "otp": "123456" } or { "token": "..." }  (see auth.mjs)
 // answers { ok, sales: [{ t, amount, currency, ref }], more } with one entry per paid payment, newest first.
 // t is the payment time in seconds, amount is in cents, ref is the name given in a shared link (?r=name) or ''.
 // No buyer details leave this function.
 //
 // Settings (secrets of the host): STRIPE_KEY and PAYMENT_LINK as for /api/unlock, plus
 //   ADMIN_KEY     a long password (16 characters or more) only the seller knows
-const enc = new TextEncoder();
+import { authorize, statusOf } from './auth.mjs';
+
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' },
 });
 const PAGES = 30;       // 100 payments a page
 
-async function same(a, b) {            // compares two strings without telling how many characters match
-  const [x, y] = await Promise.all([a, b].map(async (s) => new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(String(s))))));
-  let d = 0;
-  for (let i = 0; i < x.length; i++) d |= x[i] ^ y[i];
-  return d === 0;
-}
 
 export async function handle(request, env, fetchImpl = fetch) {
   env = env || {};
   if (request.method !== 'POST') return json({ error: 'method' }, 405);
-  if (!env.STRIPE_KEY || !env.PAYMENT_LINK || String(env.ADMIN_KEY || '').length < 16) return json({ error: 'not_configured' }, 503);
+  if (!env.STRIPE_KEY || !env.PAYMENT_LINK) return json({ error: 'not_configured' }, 503);
   let body;
   try { body = await request.json(); } catch { return json({ error: 'bad_request' }, 400); }
-  if (!body || typeof body.key !== 'string' || !(await same(body.key, env.ADMIN_KEY))) return json({ error: 'forbidden' }, 403);
+  const auth = await authorize(body, env);
+  if (!auth.ok) return json({ error: auth.error }, statusOf(auth.error));
   try {
     const sales = [];
     let after = '', more = false;
@@ -45,7 +41,7 @@ export async function handle(request, env, fetchImpl = fetch) {
       if (!more) break;
       after = data[data.length - 1].id;
     }
-    return json({ ok: true, sales, more });
+    return json({ ok: true, sales, more, token: auth.token || '' });
   } catch {
     return json({ error: 'server' }, 500);
   }

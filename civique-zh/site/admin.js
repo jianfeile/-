@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var KEY = '', USERS = [], QS = [], BY = {}, FREE = {}, PATCHES = {}, ORIG = {};
+  var TOKEN = '', USERS = [], QS = [], BY = {}, FREE = {}, PATCHES = {}, ORIG = {};
   var THEMES = [['principes', '共和国的原则与价值'], ['institutions', '制度与政治体系'], ['droits', '权利与义务'], ['histoire', '历史、地理与文化'], ['societe', '在法国社会生活']];
   var LEVELS = { csp: '多年卡', cr: '十年卡', nat: '入籍' };
   var LETTERS = ['A（正确答案）', 'B', 'C', 'D'];
@@ -16,11 +16,12 @@
   function td(text, cls) { return el('td', { text: text === null || text === undefined ? '' : String(text), cls: cls || '' }); }
   function say(text, ok) { $('msg').textContent = text || ''; $('msg').className = ok ? 'ok' : ''; }
   function api(op, more) {
-    return fetch('/api/admin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({ key: KEY, op: op }, more || {})) })
-      .then(function (r) { return r.json().catch(function () { return { error: 'server' }; }); }, function () { return { error: 'network' }; });
+    return fetch('/api/admin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({ token: TOKEN, op: op }, more || {})) })
+      .then(function (r) { return r.json().catch(function () { return { error: 'server' }; }); }, function () { return { error: 'network' }; })
+      .then(function (d) { if (d.error === 'expired' || (d.error === 'forbidden' && TOKEN)) signOut('登录已过期，请重新输入密码。'); return d; });
   }
   function why(e) {
-    return e === 'forbidden' ? '密码不对。' : e === 'not_configured' ? '还没设置管理密码。' : e === 'no_database' ? '数据库还没接上。' : e === 'network' ? '网络不通，稍后再试。' : '出错了，稍后再试。';
+    return e === 'forbidden' ? '密码不对。' : e === 'otp_required' ? '请输入谷歌验证器里的 6 位数字。' : e === 'bad_otp' ? '验证器的数字不对或已过期，等它换下一组再试。' : e === 'expired' ? '登录已过期，请重新输入密码。' : e === 'not_configured' ? '还没设置管理密码。' : e === 'no_database' ? '数据库还没接上。' : e === 'network' ? '网络不通，稍后再试。' : '出错了，稍后再试。';
   }
   function when(ms) {
     if (!ms) return '';
@@ -123,6 +124,13 @@
 
       card.appendChild(el('h3', { text: '哪几天用了' }));
       card.appendChild(el('p', { cls: 'small', text: d.days.length ? d.days.map(function (x) { var p = st.days[x.day]; return x.day + (p ? '（' + p[0] + ' 题）' : ''); }).join('　') : '没有记录。' }));
+      if (u.id.slice(0, 2) === 'b:') {
+        card.appendChild(el('h3', { text: '解锁的设备' }));
+        var dv = el('div', { cls: 'row' }, [el('span', { text: '已在 ' + d.devices + ' 台设备上解锁，上限 ' + d.limit + ' 台。' })]);
+        var rs = el('button', { type: 'button', cls: 'plain', text: '清空设备（客人换手机时用）' });
+        rs.addEventListener('click', function () { api('code-reset', { code: u.id.slice(2) }).then(function (r) { if (!r.ok) return say(why(r.error)); say('已清空，客人可以重新在 ' + d.limit + ' 台设备上解锁。', true); openUser(u.id); }); });
+        dv.appendChild(rs); card.appendChild(dv);
+      }
       var del = el('button', { type: 'button', cls: 'danger', text: '删除这个人的记录' });
       del.style.marginTop = '14px';
       del.addEventListener('click', function () {
@@ -268,16 +276,33 @@
   });
 
   // ---------------------------------------------------------------- start
-  $('f').addEventListener('submit', function (ev) {
-    ev.preventDefault();
-    KEY = $('k').value; say('读取中…', true);
-    loadUsers().then(function (d) {
-      if (!d.ok) { $('main').hidden = true; return say(why(d.error)); }
+  var STORE = 'civique.admin';
+  function signOut(text) {
+    TOKEN = ''; try { sessionStorage.removeItem(STORE); } catch (e) { /* nothing kept */ }
+    $('main').hidden = true; $('f').hidden = false; say(text || '');
+  }
+  function enter() {
+    return loadUsers().then(function (d) {
+      if (!d.ok) { if (!$('main').hidden || TOKEN) signOut(why(d.error)); else say(why(d.error)); return; }
       say(''); $('main').hidden = false; $('f').hidden = true;
       loadCodes();
       return loadBank();
     });
+  }
+  $('f').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    say('读取中…', true);
+    fetch('/api/admin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: $('k').value, otp: $('otp').value, op: 'login' }) })
+      .then(function (r) { return r.json().catch(function () { return { error: 'server' }; }); }, function () { return { error: 'network' }; })
+      .then(function (d) {
+        if (!d.ok) { $('main').hidden = true; if (d.error === 'otp_required') $('otp').focus(); return say(why(d.error)); }
+        TOKEN = d.token; try { sessionStorage.setItem(STORE, TOKEN); } catch (e) { /* asked again after a reload */ }
+        $('k').value = ''; $('otp').value = '';
+        return enter();
+      });
   });
+  try { TOKEN = sessionStorage.getItem(STORE) || ''; } catch (e) { TOKEN = ''; }
+  if (TOKEN) enter();
   $('uq').addEventListener('input', drawUsers); $('uf').addEventListener('change', drawUsers);
   $('reload').addEventListener('click', function () { loadUsers(); });
   $('bq').addEventListener('input', drawBank); $('bonly').addEventListener('change', drawBank);

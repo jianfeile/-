@@ -49,20 +49,26 @@
     $('msg').textContent = more ? '订单很多，只显示了最近的 3000 笔。' : '';
     draw();
   }
-  $('f').addEventListener('submit', function (ev) {
-    ev.preventDefault();
+  var STORE = 'civique.admin';
+  function ask(body) {
     $('msg').textContent = '读取中…';
-    fetch('/api/sales', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: $('k').value }) })
+    fetch('/api/sales', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().catch(function () { return { error: 'server' }; }); })
       .then(function (d) {
         if (!d.ok) {
           $('out').hidden = true;
-          $('msg').textContent = d.error === 'forbidden' ? '密码不对。' : d.error === 'not_configured' ? '还没设置好：Cloudflare 里缺少密钥。' : d.error === 'payment_service' ? 'Stripe 没有回应，稍后再试。' : '出错了，稍后再试。';
+          if (body.token) { try { sessionStorage.removeItem(STORE); } catch (e) { /* nothing kept */ } $('msg').textContent = d.error === 'expired' || d.error === 'forbidden' ? '登录已过期，请重新输入密码。' : '出错了，稍后再试。'; return; }
+          $('msg').textContent = d.error === 'forbidden' ? '密码不对。' : d.error === 'otp_required' ? '请输入谷歌验证器里的 6 位数字。' : d.error === 'bad_otp' ? '验证器的数字不对或已过期，等它换下一组再试。'
+            : d.error === 'not_configured' ? '还没设置好：Cloudflare 里缺少密钥。' : d.error === 'payment_service' ? 'Stripe 没有回应，稍后再试。' : '出错了，稍后再试。';
           return;
         }
+        if (d.token) { try { sessionStorage.setItem(STORE, d.token); } catch (e) { /* asked again after a reload */ } }
+        $('k').value = ''; $('otp').value = '';
         sales = d.sales || []; more = !!d.more; show();
       }, function () { $('msg').textContent = '网络不通，稍后再试。'; });
-  });
+  }
+  $('f').addEventListener('submit', function (ev) { ev.preventDefault(); ask({ key: $('k').value, otp: $('otp').value }); });
+  try { var kept = sessionStorage.getItem(STORE); if (kept) ask({ token: kept }); } catch (e) { /* ask for the password */ }
   $('m').addEventListener('change', draw);
   $('pc').addEventListener('input', draw);
   $('csv').addEventListener('click', function () {

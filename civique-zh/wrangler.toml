@@ -1,5 +1,5 @@
 # Cloudflare Pages: the static site is in site/, the unlock function in functions/.
-name = "civique-zh"
+name = "civique"
 pages_build_output_dir = "site"
 compatibility_date = "2026-01-01"
 

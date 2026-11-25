@@ -32,6 +32,20 @@ const ENV = { STRIPE_KEY: 'rk_live_standin', PAYMENT_LINK: 'plink_ours', CONTENT
 const MANY = {};
 for (let i = 0; i < 120; i++) MANY['cs_live_MANY' + String(i).padStart(6, '0')] = { object: 'checkout.session', id: 'cs_live_MANY' + String(i).padStart(6, '0'), livemode: true, status: 'complete', payment_status: 'paid', payment_link: 'plink_ours', created: 1790000000 + i * 3600, amount_total: 1299, currency: 'eur', client_reference_id: i % 3 === 0 ? 'wang' : (i % 3 === 1 ? null : '<b>bad</b>'), customer_details: { email: 'many' + i + '@example.com' } };
 let reportMany = false;
+// a stand-in for Cloudflare D1, on the SQLite that comes with Node
+function d1() {
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  const stmt = (sql, args) => ({
+    bind: (...a) => stmt(sql, a),
+    run: async () => { db.prepare(sql).run(...args); return { success: true }; },
+    all: async () => ({ results: db.prepare(sql).all(...args).map((r) => Object.assign({}, r)) }),
+    first: async () => { const r = db.prepare(sql).get(...args); return r ? Object.assign({}, r) : null; },
+  });
+  return { prepare: (sql) => stmt(sql, []), batch: async (list) => { for (const x of list) await x.run(); return []; } };
+}
+ENV.DB = d1();
+const CF = { country: 'FR', city: 'Lyon' };
 async function stripeStandIn(url, opts) {
   const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   if ((opts.headers.authorization || '') !== 'Bearer ' + ENV.STRIPE_KEY) return reply(401, { error: { message: 'bad key' } });
@@ -50,12 +64,22 @@ async function stripeStandIn(url, opts) {
   }
   return reply(404, {});
 }
-let core = null, salesCore = null;
+let core = null, salesCore = null, adminCore = null;
 
 function serve() {
   return new Promise((resolve) => {
     const srv = http.createServer((req, res) => {
       let p = decodeURIComponent(req.url.split('?')[0]);
+      if (p === '/api/sync' || p === '/api/patches' || p === '/api/admin') {
+        const chunks = [];
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', async () => {
+          const r = await adminCore[p.slice(5)](new Request('http://x' + p, { method: req.method, headers: { 'content-type': 'application/json', 'user-agent': req.headers['user-agent'] || '' }, body: req.method === 'POST' ? Buffer.concat(chunks) : undefined }), ENV, CF);
+          res.writeHead(r.status, { 'content-type': 'application/json' });
+          res.end(await r.text());
+        });
+        return;
+      }
       if (p === '/api/sales') {
         const chunks = [];
         req.on('data', (c) => chunks.push(c));
@@ -105,6 +129,7 @@ if (CODE) {
 (async () => {
   core = await import(require('url').pathToFileURL(path.resolve(__dirname, '..', 'server', 'unlock-core.mjs')).href);
   salesCore = await import(require('url').pathToFileURL(path.resolve(__dirname, '..', 'server', 'sales-core.mjs')).href);
+  adminCore = await import(require('url').pathToFileURL(path.resolve(__dirname, '..', 'server', 'admin-core.mjs')).href);
   const srv = await serve();
   const base = 'http://127.0.0.1:' + srv.address().port + '/';
   const browser = await chromium.launch();
@@ -1048,6 +1073,107 @@ if (CODE) {
       check('sales page: no sideways scroll on a phone', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
       reportMany = false;
     }
+    await ctx.close();
+  }
+
+  // ---- who uses the site, the admin page, corrections to the bank
+  console.log('usage, admin page, corrections');
+  {
+    const post = (fn, body, env) => adminCore[fn](new Request('http://x/api/' + fn, { method: 'POST', headers: { 'user-agent': 'TestPhone' }, body: JSON.stringify(body) }), env || ENV, CF);
+    const adm = async (op, more) => (await post('admin', Object.assign({ key: ENV.ADMIN_KEY, op }, more || {}))).json();
+    const dev = 'a1b2c3d4e5f60718';
+    check('usage: nothing is kept when there is no database, and the app is told so', (await post('sync', { device: dev }, Object.assign({}, ENV, { DB: undefined }))).status === 503);
+    check('usage: a report without a device number is refused', (await post('sync', { device: 'x' })).status === 400);
+    const before = (await adm('users')).users;
+    check('admin: the buyer of the earlier payment is listed with the payment email and who referred them', before.some((u) => u.id.startsWith('b:') && u.email === 'buyer@example.com' && u.ref === 'lili-01'), JSON.stringify(before).slice(0, 300));
+    await post('sync', { device: dev, ref: 'wang', level: 'csp', examDate: '2027-01-15', sum: { seen: 12, ok: 9, miss: 2, ans: 15, pool: 234, exams: 1, best: 0, bestN: 0 }, state: { stats: { P009: [3, 1, 0, 2, 1795000000000], 'bad id!': [1] }, days: { '2026-11-25': [12, 9] }, exams: [{ ts: 1795000000000, target: 'csp', mini: true, score: 7, n: 10, passAt: 8, secs: 300, items: ['dropped'] }] } });
+    await post('sync', { device: dev, ref: 'other', level: 'csp', sum: { seen: 13 }, state: { stats: { P009: [4, 2, 1, 1, 1795000001000] } } });
+    let list = (await adm('users')).users, v = list.find((u) => u.id === 'v:' + dev);
+    check('usage: a visitor is one line, with place, exam type, numbers, and the first referrer kept', !!v && v.country === 'FR' && v.city === 'Lyon' && v.level === 'csp' && v.ref === 'wang' && v.sum.seen === 13 && v.days === 1 && v.ua === 'TestPhone' && !('state' in v), JSON.stringify(v));
+    const one = await adm('user', { id: 'v:' + dev });
+    check('admin: one person opens with the record of each question, and junk in a report is dropped', one.ok && one.user.state.stats.P009[0] === 4 && !('bad id!' in one.user.state.stats) && one.days.length === 1, JSON.stringify(one).slice(0, 300));
+    const code = await core.codeForSession(ENV, 'cs_live_NEWBUYER0001');
+    await post('sync', { device: dev, code: code.slice(0, 4) + '-' + code.slice(4, 8) + '-' + code.slice(8), level: 'csp', sum: { seen: 20 }, state: {} });
+    list = (await adm('users')).users;
+    const b = list.find((u) => u.id === 'b:' + code);
+    check('usage: once the visitor has paid they become the buyer: same referrer, same first day, no second line', !!b && b.ref === 'wang' && b.created === v.created && b.days === 1 && !list.some((u) => u.id === 'v:' + dev) && b.unlocked === 1, JSON.stringify(b));
+    await post('sync', { device: 'ffffffffffffffff', code: 'AAAA-BBBB-CCCC', level: 'cr', sum: {}, state: {} });
+    check('usage: a made-up code does not make a buyer', (await adm('users')).users.some((u) => u.id === 'v:ffffffffffffffff'));
+    check('admin: no password, wrong password, unknown request are refused', (await post('admin', { op: 'users' })).status === 403 && (await post('admin', { key: 'admin-password-012345678X', op: 'users' })).status === 403 && (await post('admin', { key: ENV.ADMIN_KEY, op: 'drop' })).status === 400);
+
+    // corrections
+    const freeQ = free.qs[0];
+    check('corrections: an empty or malformed one is refused', (await post('admin', { key: ENV.ADMIN_KEY, op: 'patch-set', qid: freeQ.id, data: { o: ['a', 'b'] } })).status === 400 && (await post('admin', { key: ENV.ADMIN_KEY, op: 'patch-set', qid: freeQ.id, data: { zz: 'x' } })).status === 400);
+    await adm('patch-set', { qid: freeQ.id, free: true, data: { qz: '改过的中文题干', hack: 'x' } });
+    await adm('patch-set', { qid: 'ZZPAID1', free: false, data: { e: '付费题的新讲解' } });
+    const got = await (await adminCore.patches(new Request('http://x/api/patches'), ENV)).json();
+    const key = await crypto.subtle.importKey('raw', Buffer.from(ENV.CONTENT_KEY, 'base64'), { name: 'AES-GCM' }, false, ['decrypt']);
+    const opened = JSON.parse(Buffer.from(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: Buffer.from(got.paid.iv, 'base64') }, key, Buffer.from(got.paid.ct, 'base64'))).toString('utf8'));
+    check('corrections: those of free questions are public, those of paid questions only open with the bank key', got.free[freeQ.id].qz === '改过的中文题干' && !('hack' in got.free[freeQ.id]) && !JSON.stringify(got.free).includes('付费题') && opened.ZZPAID1.e === '付费题的新讲解', JSON.stringify(got).slice(0, 200));
+
+    // in the browser
+    ({ ctx, page } = await fresh());
+    await page.goto(base + '?r=lili-01');
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForSelector('.themes');
+    await page.waitForFunction(() => /^[a-f0-9]{16}$/.test(localStorage.getItem('civique.dev') || ''));
+    const myDev = await page.evaluate(() => localStorage.getItem('civique.dev'));
+    for (let i = 0; i < 40 && !(await adm('users')).users.some((u) => u.id === 'v:' + myDev); i++) await page.waitForTimeout(100);
+    const me = (await adm('users')).users.find((u) => u.id === 'v:' + myDev);
+    check('the app reports who it is once an exam type is chosen: device number, exam type, referrer', !!me && me.level === 'csp' && me.ref === 'lili-01', JSON.stringify(me));
+    await page.goto(base + '#home');
+    await page.reload();
+    await page.locator('[data-a="continue"]').click();
+    await page.waitForSelector('.stem');
+    await page.waitForFunction((t) => document.body.innerText.includes(t) || !document.querySelector('.stem'), '改过的中文题干', { timeout: 3000 }).catch(() => {});
+    const shown = await page.evaluate((id) => { const s = JSON.parse(localStorage.getItem('civique.v1')); return s.sess.ids.includes(id); }, freeQ.id);
+    if (shown) {
+      await page.evaluate((id) => { const s = JSON.parse(localStorage.getItem('civique.v1')); s.sess.i = s.sess.ids.indexOf(id); s.zhOn = true; localStorage.setItem('civique.v1', JSON.stringify(s)); }, freeQ.id);
+      await page.reload();
+      await page.waitForFunction((t) => document.body.innerText.includes(t), '改过的中文题干', { timeout: 5000 }).catch(() => {});
+    }
+    check('a correction made in the admin page shows in the app', !shown || (await page.locator('body').innerText()).includes('改过的中文题干'), 'question in set: ' + shown);
+    await ctx.close();
+
+    ({ ctx, page } = await fresh({ viewport: { width: 390, height: 780 } }));
+    await page.goto(base + 'admin.html');
+    await page.fill('#k', 'wrong-wrong-wrong-wrong');
+    await page.locator('#f button').click();
+    await page.waitForFunction(() => document.getElementById('msg').textContent === '密码不对。');
+    check('admin page: a wrong password shows nothing', !(await page.locator('#main').isVisible()));
+    await page.fill('#k', ENV.ADMIN_KEY);
+    await page.locator('#f button').click();
+    await page.waitForSelector('#main:not([hidden])');
+    await page.waitForFunction(() => document.querySelectorAll('#ulist tr.pick').length > 2);
+    const rowsTxt = await page.locator('#ulist').innerText();
+    check('admin page: buyers by email, visitors by number, with who sent them and where they are', rowsTxt.includes('buyer@example.com') && rowsTxt.includes('访客 ' + myDev.slice(0, 6)) && rowsTxt.includes('lili-01') && rowsTxt.includes('Lyon, FR'), rowsTxt.slice(0, 300));
+    await page.fill('#uq', code.slice(0, 4));
+    await page.locator('#ulist tr.pick').first().click();
+    await page.waitForSelector('#udetail .card');
+    await page.fill('#uq', '');
+    await page.fill('#uq', myDev.slice(0, 6));
+    await page.locator('#ulist tr.pick').first().click();
+    await page.waitForFunction(() => /各主题掌握情况/.test(document.getElementById('udetail').innerText));
+    check('admin page: one person opens with themes, weak questions, exams and days', /没学明白的题/.test(await page.locator('#udetail').innerText()) && /模拟考试/.test(await page.locator('#udetail').innerText()));
+    await page.locator('.tabs [data-tab="refs"]').click();
+    const refsTxt = await page.locator('#rlist').innerText();
+    check('admin page: who sent whom, paid or not', /wang\s+1\s+1/.test(refsTxt) && /lili-01\s+\d+\s+\d+/.test(refsTxt) && /没有推荐人/.test(refsTxt), refsTxt);
+    await page.locator('.tabs [data-tab="bank"]').click();
+    await page.waitForFunction(() => /题库共 \d+ 题，改过 2 题/.test(document.getElementById('binfo').textContent));
+    const second = free.qs[1];
+    await page.fill('#bq', second.id);
+    await page.locator('#blist .card button').first().click();
+    await page.fill('#e-e', '后台改的新讲解');
+    await page.locator('#bedit button', { hasText: '保存' }).click();
+    await page.waitForFunction(() => /已保存/.test(document.getElementById('msg').textContent));
+    const saved = (await adm('patches')).patches.find((x) => x.qid === second.id);
+    check('admin page: a question is found by its number, edited, and only what changed is saved', !!saved && saved.free === true && JSON.stringify(saved.data) === JSON.stringify({ e: '后台改的新讲解' }), JSON.stringify(saved));
+    await page.locator('#blist .card button').first().click();
+    await page.locator('#bedit button', { hasText: '恢复成原来的' }).click();
+    await page.waitForFunction(() => /已恢复原样/.test(document.getElementById('msg').textContent));
+    check('admin page: a correction can be undone', !(await adm('patches')).patches.some((x) => x.qid === second.id));
+    check('admin page: no sideways scroll on a phone', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    await adm('patch-del', { qid: freeQ.id }); await adm('patch-del', { qid: 'ZZPAID1' });
     await ctx.close();
   }
 

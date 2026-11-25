@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>管理后台</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<style>
+  :root { color-scheme: light dark; --g: #00A66C; --gt: #00704A; --line: #D5E2DB; --ink2: #5B6B64; --soft: #EEF4F0; --bad: #C8302A; --warn: #FFC933; }
+  @media (prefers-color-scheme: dark) { :root { --line: #2C3F38; --ink2: #A9B8B1; --soft: #12241E; --gt: #4FD6A0; } }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 1040px; padding: 18px 14px 70px; font: 15.5px/1.6 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 21px; margin: 0; } h2 { font-size: 17px; margin: 22px 0 8px; } h3 { font-size: 15px; margin: 16px 0 6px; }
+  p { margin: 6px 0; } .small { font-size: 13.5px; color: var(--ink2); }
+  input, select, button, textarea { font: inherit; padding: 9px 11px; border-radius: 10px; border: 2px solid var(--line); background: transparent; color: inherit; min-width: 0; }
+  textarea { width: 100%; resize: vertical; line-height: 1.5; }
+  button { background: var(--g); border-color: var(--g); color: #fff; font-weight: 700; cursor: pointer; }
+  button.plain { background: transparent; color: inherit; border-color: var(--line); }
+  button.danger { background: transparent; color: var(--bad); border-color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1 1 180px; }
+  .tabs { display: flex; gap: 6px; margin: 14px 0 6px; flex-wrap: wrap; }
+  .tabs button { background: transparent; color: inherit; border-color: var(--line); }
+  .tabs button[aria-selected="true"] { background: var(--g); border-color: var(--g); color: #fff; }
+  .sum { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+  .sum div { flex: 1 1 120px; border: 2px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 13.5px; color: var(--ink2); }
+  .sum b { display: block; font-size: 22px; color: CanvasText; }
+  .scroll { overflow-x: auto; border: 2px solid var(--line); border-radius: 12px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 13px; color: var(--ink2); font-weight: 600; } td.n, th.n { text-align: right; }
+  td.wrap { white-space: normal; min-width: 240px; }
+  tbody tr.pick { cursor: pointer; } tbody tr.pick:hover { background: var(--soft); }
+  .tag { display: inline-block; padding: 0 7px; border-radius: 7px; font-size: 12.5px; font-weight: 700; background: var(--soft); }
+  .tag.paid { background: var(--g); color: #fff; } .tag.edit { background: var(--warn); color: #3B2A00; }
+  .bar { height: 10px; border-radius: 5px; background: var(--soft); overflow: hidden; min-width: 120px; }
+  .bar i { display: block; height: 100%; background: var(--g); }
+  .card { border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+  .fr { font-weight: 700; } label { display: block; font-size: 13px; color: var(--ink2); margin: 10px 0 3px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } @media (max-width: 620px) { .two { grid-template-columns: 1fr; } }
+  #msg { color: var(--bad); font-weight: 700; min-height: 1.6em; }
+  #msg.ok { color: var(--gt); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="row"><h1 class="grow">管理后台</h1><a class="small" href="sales.html">销售和佣金</a></div>
+<form id="f" class="row" style="margin-top:12px"><input id="k" class="grow" type="password" autocomplete="current-password" placeholder="管理密码" aria-label="管理密码"><button type="submit">进入</button></form>
+<p id="msg" role="status"></p>
+<div id="main" hidden>
+  <div class="tabs" role="tablist">
+    <button type="button" data-tab="users" aria-selected="true">用户</button>
+    <button type="button" data-tab="refs" aria-selected="false">推荐人</button>
+    <button type="button" data-tab="bank" aria-selected="false">题库</button>
+  </div>
+
+  <section id="t-users">
+    <div class="sum" id="usum"></div>
+    <div class="row"><input id="uq" class="grow" type="search" placeholder="搜邮箱、编号、城市、推荐人" aria-label="搜索用户">
+      <select id="uf" aria-label="筛选"><option value="all">全部</option><option value="paid">已付费</option><option value="free">未付费</option></select>
+      <button class="plain" type="button" id="reload">刷新</button></div>
+    <div class="scroll" style="margin-top:8px"><table><thead><tr><th>用户</th><th>来自</th><th>地点</th><th>最近使用</th><th class="n">天数</th><th>考试</th><th class="n">做过</th><th class="n">掌握</th><th class="n">错题</th><th class="n">模考最好</th></tr></thead><tbody id="ulist"></tbody></table></div>
+    <p class="small">点一行看这个人的学习情况。付费用户显示付款邮箱；没付费的是匿名访客，只有一个设备编号。地点按网络地址估计，只到城市。</p>
+    <div id="udetail"></div>
+  </section>
+
+  <section id="t-refs" hidden>
+    <div class="scroll"><table><thead><tr><th>推荐人</th><th class="n">带来的人</th><th class="n">其中已付费</th><th class="n">近 7 天还在用</th></tr></thead><tbody id="rlist"></tbody></table></div>
+    <p class="small">这里按“谁的链接带来了谁”统计，包括还没付费的人。佣金按实际收款算，在“销售和佣金”页。</p>
+  </section>
+
+  <section id="t-bank" hidden>
+    <div class="row"><input id="bq" class="grow" type="search" placeholder="搜题号，或题目里的法语、中文" aria-label="搜索题目"><label class="row" style="margin:0"><input id="bonly" type="checkbox" style="padding:0"> 只看改过的</label></div>
+    <p class="small" id="binfo"></p>
+    <div id="blist"></div>
+    <div id="bedit"></div>
+  </section>
+</div>
+<script src="admin.js"></script>
+</body>
+</html>

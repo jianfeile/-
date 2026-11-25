@@ -14,9 +14,12 @@
 //   PAYMENT_LINK  plink_... id: only payments made through this link count
 //   REVOKED       unlock codes that no longer work, separated by commas or spaces
 //   ALLOW_TEST    "1" to accept Stripe test-mode payments (never on the public site)
+//   DB            a D1 database binding: buyers are then listed in the admin page (see store.mjs)
 //
 // Codes issued here need no database: the first half comes from the payment, the second half is a
 // signature of the first half made with a key derived from CONTENT_KEY.
+import { rememberBuyer } from './store.mjs';
+
 const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const enc = new TextEncoder();
 
@@ -70,9 +73,10 @@ function state(s, env) {
   if (s.payment_status === 'paid' || s.payment_status === 'no_payment_required') return 'paid';
   return 'pending';
 }
-async function grant(env, sessionId) {
-  const code = await codeForSession(env, sessionId);
+async function grant(env, session) {
+  const code = await codeForSession(env, session.id);
   if (revoked(env, code)) return json({ error: 'revoked' }, 403);
+  await rememberBuyer(env, code, { email: (session.customer_details || {}).email || '', ref: session.client_reference_id || '', paidAt: session.created ? session.created * 1000 : null });
   return json({ ok: true, code: fmtCode(code), k: env.CONTENT_KEY });
 }
 
@@ -94,7 +98,7 @@ export async function handle(request, env, fetchImpl = fetch) {
       const st = state(r.body, env);
       if (st === 'pending') return json({ error: 'pending' }, 409);
       if (st !== 'paid') return json({ error: 'not_paid' }, 402);
-      return grant(env, r.body.id);
+      return grant(env, r.body);
     }
     if (typeof body.code === 'string') {
       const code = normCode(body.code);
@@ -111,7 +115,7 @@ export async function handle(request, env, fetchImpl = fetch) {
         const r = await stripe(env, q, fetchImpl);
         if (r.status !== 200) return json({ error: 'payment_service' }, 502);
         const hit = (r.body.data || []).find((s) => state(s, env) === 'paid');
-        if (hit) return grant(env, hit.id);
+        if (hit) return grant(env, hit);
       }
       return json({ error: 'not_found' }, 404);
     }

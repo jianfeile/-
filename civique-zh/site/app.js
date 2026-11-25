@@ -288,6 +288,67 @@
     DB.recall = DB.free.recall || [];
     DB.rc = null;
     DB.qs.forEach(function (q) { DB.byId[q.id] = q; });
+    applyPatches();
+  }
+  // Corrections made in the admin page since the bank file was built: question id -> the fields that changed.
+  // Those of paid questions come encrypted with the bank key, so only an unlocked device can read them.
+  var PATCH = { free: {}, paid: {}, sealed: null };
+  function apiUrl(name) { return CFG.api ? String(CFG.api).replace(/unlock$/, name) : ''; }
+  function applyPatches() {
+    [PATCH.free, DB.bank ? PATCH.paid : {}].forEach(function (set) {
+      Object.keys(set).forEach(function (id) {
+        var q = DB.byId[id], p = set[id];
+        if (!q || !p) return;
+        ['q', 'qz', 'e'].forEach(function (k) { if (typeof p[k] === 'string') q[k] = p[k]; });
+        ['o', 'oz'].forEach(function (k) { if (Array.isArray(p[k]) && p[k].length === 4) q[k] = p[k].slice(); });
+      });
+    });
+  }
+  function openPatches() {
+    if (!PATCH.sealed || !S.unlock || !S.unlock.k || !subtle) return Promise.resolve();
+    return aesOpen(b64d(S.unlock.k), b64d(PATCH.sealed.iv), b64d(PATCH.sealed.ct)).then(function (plain) {
+      PATCH.paid = JSON.parse(new TextDecoder('utf-8').decode(plain)) || {};
+      applyPatches();
+    }, function () { /* an older key: the bank file is still right */ });
+  }
+  function loadPatches() {
+    if (!apiUrl('patches')) return Promise.resolve();
+    return getJson(apiUrl('patches')).then(function (d) {
+      if (!d || !d.ok) return;
+      PATCH.free = d.free && typeof d.free === 'object' ? d.free : {};
+      PATCH.sealed = d.paid && d.paid.iv && d.paid.ct ? d.paid : null;
+      applyPatches();
+      return openPatches();
+    }).catch(function () { /* corrections are optional */ });
+  }
+  // Now and then the app tells the site how far this device's owner is, so the seller can see who is stuck where
+  // (see the terms page). No name is asked: a buyer is known by the unlock code, anyone else by a random device number.
+  var DEV_KEY = 'civique.dev', syncAt = 0, syncSent = '';
+  function deviceId() {
+    var id = lsGet(DEV_KEY);
+    if (!/^[a-f0-9]{16}$/.test(id || '')) {
+      var u = new Uint8Array(8);
+      try { window.crypto.getRandomValues(u); } catch (e) { for (var i = 0; i < 8; i++) u[i] = Math.floor(Math.random() * 256); }
+      id = toHex(u); lsSet(DEV_KEY, id);
+    }
+    return id;
+  }
+  function syncNow(force) {
+    var url = apiUrl('sync');
+    if (!url || !DB.free || !S.target) return;
+    var now = Date.now();
+    if (!force && now - syncAt < 60000) return;
+    var ok = 0, miss = 0, ans = 0, seen = 0, best = 0, bestN = 0;
+    Object.keys(S.stats).forEach(function (id) { var r = S.stats[id]; seen++; ans += r[0] || 0; if (r[2] === 1) ok++; if (r[3] > 0) miss++; });
+    S.exams.forEach(function (e) { if (!e.mini && e.score >= best) { best = e.score; bestN = e.n; } });
+    var body = JSON.stringify({
+      device: deviceId(), code: (S.unlock && S.unlock.code) || '', unlocked: unlocked(), ref: lsGet(REF_KEY) || '', level: S.target, examDate: S.examDate || '',
+      sum: { seen: seen, ok: ok, miss: miss, ans: ans, pool: pool().length, exams: S.exams.length, best: best, bestN: bestN },
+      state: { stats: S.stats, days: S.days || {}, exams: S.exams.map(function (e) { return { ts: e.ts, target: e.target, mini: e.mini, score: e.score, n: e.n, passAt: e.passAt, secs: e.secs }; }) }
+    });
+    if (body === syncSent) return;
+    syncAt = now; syncSent = body;
+    try { fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body, keepalive: body.length < 60000 }).catch(function () { syncSent = ''; }); } catch (e) { /* optional */ }
   }
   function loadFree() {
     var p = window.CIVIQUE_FREE ? Promise.resolve(window.CIVIQUE_FREE) : getJson('data/free.json');
@@ -318,6 +379,7 @@
     return aesOpen(K, b64d(bank.iv), b64d(bank.ct)).then(function (plain) {
       var data = JSON.parse(new TextDecoder('utf-8').decode(plain));
       DB.bank = data; useQuestions();
+      setTimeout(openPatches, 0);          // S.unlock is set by the caller right after
     });
   }
   function keyFromCode(bank, code) {
@@ -2078,6 +2140,7 @@
     if (r === 'quiz' && !S.sess) { location.hash = 'home'; return; }
     closeWord();
     keepRef();
+    syncNow(false);
     app.innerHTML = VIEWS[r]() + modal();
     syncDock();
     if (top) window.scrollTo(0, 0);
@@ -2348,10 +2411,12 @@
   if ('serviceWorker' in navigator && CFG.offline !== false && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     try { navigator.serviceWorker.register('sw.js').catch(function () { /* the site works without it */ }); } catch (e) { /* same */ }
   }
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') syncNow(true); });
   loadFree().then(function () {
     if (S.target && !DB.free.meta.counts[S.target]) { S.target = ''; S.sess = null; S.exam = null; }
   }).then(restoreUnlock).then(codeFromUrl).then(paidFromUrl).then(function () {
     sanitize(); save(); render(true);
+    loadPatches().then(function () { if (PATCH.sealed || Object.keys(PATCH.free).length) render(); });
   }).catch(function () {
     app.innerHTML = '<main class="wrap"><h1>公民考试中文题库</h1><p class="note warn">题目没有加载出来。请检查网络后刷新页面。</p></main>';
   });

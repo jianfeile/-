@@ -55,6 +55,13 @@ cd site && python3 -m http.server 8080      # 打开 http://localhost:8080
    - `CONTENT_KEY`：题库密钥，`node tools/bank.mjs key --code XXXX-XXXX-XXXX` 的输出。
    可选：`PAYMENT_LINK`（`plink_...`，只认这一个收款链接的付款）、`REVOKED`（作废的解锁码，逗号分隔）。
 
+### 管理后台、使用记录、题库更正
+
+- 需要一个 Cloudflare D1 数据库，在 `wrangler.toml` 里绑定为 `DB`。没有绑定时网站照常工作，只是不记录。表在第一次使用时自动建立（`server/store.mjs`）。
+- 应用隔一会儿向 `/api/sync` 报一次学习记录（`server/admin-core.mjs`）：付费用户以解锁码识别，付款时记下邮箱和推荐人；访客以随机设备编号识别。购买条款页写明了收集的内容。
+- `site/admin.html`（管理密码 `ADMIN_KEY`）：用户列表和每个人的学习情况、谁的链接带来了谁、题库更正。
+- 题库更正存在数据库里，应用启动时从 `/api/patches` 读取并盖在题库文件上；付费题的更正用 `CONTENT_KEY` 加密。下次重建题库文件时应把更正并入源文件。
+
 ### 推荐人和销售报表
 
 - 发给朋友的链接在网址后加 `?r=名字`（英文字母、数字、短横线，最长 40 个）。名字记在访客的设备上，也留在地址栏里，付款时作为 `client_reference_id` 交给 Stripe。没有链接的人可以在解锁页“朋友推荐来的？”里手填。

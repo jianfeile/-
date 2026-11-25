@@ -1155,6 +1155,11 @@ if (CODE) {
     await page.locator('#ulist tr.pick').first().click();
     await page.waitForFunction(() => /各主题掌握情况/.test(document.getElementById('udetail').innerText));
     check('admin page: one person opens with themes, weak questions, exams and days', /没学明白的题/.test(await page.locator('#udetail').innerText()) && /模拟考试/.test(await page.locator('#udetail').innerText()));
+    await page.locator('#udetail button.danger').click();
+    check('admin page: deleting a record asks twice', (await adm('users')).users.some((u) => u.id === 'v:' + myDev));
+    await page.locator('#udetail button.danger').click();
+    await page.waitForFunction(() => /已删除/.test(document.getElementById('msg').textContent));
+    check('admin page: a person\'s record can be erased', !(await adm('users')).users.some((u) => u.id === 'v:' + myDev));
     await page.locator('.tabs [data-tab="refs"]').click();
     const refsTxt = await page.locator('#rlist').innerText();
     check('admin page: who sent whom, paid or not', /wang\s+1\s+1/.test(refsTxt) && /lili-01\s+\d+\s+\d+/.test(refsTxt) && /没有推荐人/.test(refsTxt), refsTxt);

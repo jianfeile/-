@@ -117,6 +117,13 @@
 
       card.appendChild(el('h3', { text: '哪几天用了' }));
       card.appendChild(el('p', { cls: 'small', text: d.days.length ? d.days.map(function (x) { var p = st.days[x.day]; return x.day + (p ? '（' + p[0] + ' 题）' : ''); }).join('　') : '没有记录。' }));
+      var del = el('button', { type: 'button', cls: 'danger', text: '删除这个人的记录' });
+      del.style.marginTop = '14px';
+      del.addEventListener('click', function () {
+        if (del.getAttribute('data-sure') !== '1') { del.setAttribute('data-sure', '1'); del.textContent = '再点一次确认删除（删了不能恢复）'; return; }
+        api('user-del', { id: u.id }).then(function (r) { if (!r.ok) return say(why(r.error)); box.innerHTML = ''; say('已删除。如果这个人继续使用，会重新出现。', true); loadUsers(); });
+      });
+      card.appendChild(del);
       box.appendChild(card);
       card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });

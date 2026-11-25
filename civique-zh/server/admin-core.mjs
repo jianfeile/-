@@ -136,6 +136,11 @@ export async function admin(request, env) {
     const days = (await d.prepare('SELECT day, n FROM days WHERE user = ?1 ORDER BY day DESC LIMIT 400').bind(r.id).all()).results || [];
     return json({ ok: true, user: Object.assign(r, { sum: r.sum ? JSON.parse(r.sum) : null, state: r.state ? JSON.parse(r.state) : null }), days });
   }
+  if (op === 'user-del') {          // someone asked for their record to be erased
+    const id = String(body.id || '');
+    await d.batch([d.prepare('DELETE FROM days WHERE user = ?1').bind(id), d.prepare('DELETE FROM users WHERE id = ?1').bind(id)]);
+    return json({ ok: true });
+  }
   if (op === 'key') return json({ ok: true, k: env.CONTENT_KEY || '' });         // the admin page opens the bank file with it, to show the questions
   if (op === 'patches') {
     const rows = (await d.prepare('SELECT qid, free, data, t FROM patches ORDER BY t DESC').all()).results || [];

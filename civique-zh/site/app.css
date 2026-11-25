@@ -1489,3 +1489,11 @@ button.voc:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--c); }
 /* ---- a short note when the phone cannot read French aloud ---- */
 #saynote { position: fixed; z-index: 30; left: 12px; right: 12px; bottom: calc(92px + env(safe-area-inset-bottom, 0px)); max-width: 520px; margin: 0 auto; padding: 12px 16px; border-radius: var(--r); background: var(--ink); color: var(--bg); font-size: 14px; line-height: 1.55; box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
 
+
+/* ==== screens: sign-in ==== */
+.login-card h2 { font-size: 19px; }
+.login-card .field input { flex: 1 1 auto; font-size: 17px; }
+.linkbtn { background: none; border: 0; padding: 10px 6px; font: inherit; font-weight: 700; color: var(--g-t); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.acct { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: -4px 2px; }
+.acct b { overflow-wrap: anywhere; }
+.acct .linkbtn { padding: 6px 4px; }

@@ -30,7 +30,12 @@
   }
   function full(ms) { return ms ? new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' }).format(new Date(ms)) : ''; }
   function isPaid(u) { return u.id.slice(0, 2) === 'b:' || !!u.unlocked; }
-  function who(u) { return u.id.slice(0, 2) === 'b:' ? (u.email || '付费用户 ' + u.id.slice(2, 6)) : '访客 ' + u.id.slice(2, 8); }
+  function who(u) {
+    var kind = u.id.slice(0, 2);
+    if (kind === 'b:') return (u.email || u.login || '付费用户 ' + u.id.slice(2, 6)) + (u.login && u.email && u.login !== u.email ? '（登录：' + u.login + '）' : '');
+    return kind === 'u:' ? (u.login || u.id.slice(2)) : '访客 ' + u.id.slice(2, 8);
+  }
+  function kindOf(u) { return isPaid(u) ? '付费' : (u.id.slice(0, 2) === 'u:' ? '已登录' : '访客'); }
   function place(u) { return [u.city, u.country].filter(Boolean).join(', '); }
 
   // ---------------------------------------------------------------- users
@@ -39,15 +44,16 @@
     var list = USERS.filter(function (u) {
       if (f === 'paid' && !isPaid(u)) return false;
       if (f === 'free' && isPaid(u)) return false;
-      return !q || [who(u), u.id, u.city, u.country, u.ref].join(' ').toLowerCase().indexOf(q) >= 0;
+      if (f === 'anon' && u.id.slice(0, 2) !== 'v:') return false;
+      return !q || [who(u), u.id, u.login, u.email, u.city, u.country, u.ref].join(' ').toLowerCase().indexOf(q) >= 0;
     });
     $('usum').innerHTML = '';
-    [[USERS.length, '人用过'], [USERS.filter(isPaid).length, '已付费'], [USERS.filter(function (u) { return u.last_seen > day; }).length, '24 小时内在用'], [USERS.filter(function (u) { return u.last_seen > week; }).length, '7 天内在用']]
+    [[USERS.length, '人用过'], [USERS.filter(function (u) { return u.id.slice(0, 2) !== 'v:'; }).length, '已登录或付费'], [USERS.filter(isPaid).length, '已付费'], [USERS.filter(function (u) { return u.last_seen > day; }).length, '24 小时内在用'], [USERS.filter(function (u) { return u.last_seen > week; }).length, '7 天内在用']]
       .forEach(function (x) { $('usum').appendChild(el('div', {}, [el('b', { text: x[0] }), x[1]])); });
     $('ulist').innerHTML = '';
     list.slice(0, 500).forEach(function (u) {
       var s = u.sum || {}, tr = el('tr', { cls: 'pick' });
-      var name = td(''); name.appendChild(el('span', { cls: 'tag' + (isPaid(u) ? ' paid' : ''), text: isPaid(u) ? '付费' : '试用' })); name.appendChild(document.createTextNode(' ' + who(u)));
+      var name = td(''); name.appendChild(el('span', { cls: 'tag' + (isPaid(u) ? ' paid' : ''), text: kindOf(u) })); name.appendChild(document.createTextNode(' ' + who(u)));
       tr.appendChild(name); tr.appendChild(td(u.ref || '—')); tr.appendChild(td(place(u))); tr.appendChild(td(when(u.last_seen))); tr.appendChild(td(u.days || 0, 'n'));
       tr.appendChild(td((LEVELS[u.level] || '') + (u.exam_date ? ' · ' + u.exam_date : '')));
       tr.appendChild(td(s.seen ? s.seen + ' / ' + (s.pool || '?') : '0', 'n')); tr.appendChild(td(s.ok || 0, 'n')); tr.appendChild(td(s.miss || 0, 'n'));
@@ -219,6 +225,48 @@
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  // ---------------------------------------------------------------- unlock codes
+  function loadCodes() {
+    return api('codes').then(function (d) {
+      $('clist').innerHTML = '';
+      if (!d.ok) return;
+      d.codes.forEach(function (c) {
+        var tr = el('tr'), state = c.revoked ? '已作废' : (c.used_by ? '已使用 ' + full(c.used_at) : '未使用');
+        var code = td(''); code.appendChild(el('b', { text: c.code })); tr.appendChild(code);
+        tr.appendChild(td(c.note || '')); tr.appendChild(td(full(c.created))); tr.appendChild(td(state));
+        var ops = td('');
+        function btn(text, cls, fn) { var b = el('button', { type: 'button', cls: cls, text: text }); b.style.padding = '3px 9px'; b.style.marginRight = '6px'; b.addEventListener('click', function () { fn(b); }); ops.appendChild(b); }
+        if (!c.revoked) {
+          btn('复制', 'plain', function (b) { try { navigator.clipboard.writeText(c.code).then(function () { b.textContent = '已复制'; }); } catch (e) { say('复制不了，请手动选中解锁码。'); } });
+          if (c.used_by) btn('换设备', 'plain', function () { api('code-reset', { code: c.code }).then(function (r) { if (!r.ok) return say(why(r.error)); say(c.code + ' 可以在新设备上重新用一次。', true); loadCodes(); }); });
+          btn('作废', 'danger', function (b) {
+            if (b.getAttribute('data-sure') !== '1') { b.setAttribute('data-sure', '1'); b.textContent = '确认作废'; return; }
+            api('code-del', { code: c.code }).then(function (r) { if (!r.ok) return say(why(r.error)); say(c.code + ' 已作废。', true); loadCodes(); });
+          });
+        }
+        tr.appendChild(ops); $('clist').appendChild(tr);
+      });
+      if (!d.codes.length) { var tr = el('tr'); var x = td('还没有生成过解锁码'); x.colSpan = 5; tr.appendChild(x); $('clist').appendChild(tr); }
+    });
+  }
+  $('cnew').addEventListener('click', function () {
+    $('cnew').disabled = true;
+    api('code-new', { n: Number($('cn').value) || 1, note: $('cnote').value }).then(function (d) {
+      $('cnew').disabled = false;
+      if (!d.ok) return say(why(d.error));
+      var box = $('cmade'); box.innerHTML = ''; box.hidden = false;
+      box.appendChild(el('p', { cls: 'small', text: '新生成的解锁码（每个只能用在一台设备上）：' }));
+      var pre = el('textarea', { rows: String(Math.min(10, d.codes.length)), readonly: 'readonly', id: 'cmade-text' }); pre.value = d.codes.join('\n'); box.appendChild(pre);
+      say('生成了 ' + d.codes.length + ' 个解锁码。', true); $('cnote').value = '';
+      loadCodes();
+    });
+  });
+  $('cdelgo').addEventListener('click', function () {
+    var v = $('cdel').value.trim();
+    if (!v) return;
+    api('code-del', { code: v }).then(function (r) { if (!r.ok) return say(r.error === 'bad_request' ? '这不是一个解锁码（12 位字母和数字）。' : why(r.error)); say(v + ' 已作废。', true); $('cdel').value = ''; loadCodes(); });
+  });
+
   // ---------------------------------------------------------------- start
   $('f').addEventListener('submit', function (ev) {
     ev.preventDefault();
@@ -226,6 +274,7 @@
     loadUsers().then(function (d) {
       if (!d.ok) { $('main').hidden = true; return say(why(d.error)); }
       say(''); $('main').hidden = false; $('f').hidden = true;
+      loadCodes();
       return loadBank();
     });
   });
@@ -235,7 +284,7 @@
   Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) {
     b.addEventListener('click', function () {
       Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
-      ['users', 'refs', 'bank'].forEach(function (t) { $('t-' + t).hidden = t !== b.getAttribute('data-tab'); });
+      ['users', 'refs', 'bank', 'codes'].forEach(function (t) { $('t-' + t).hidden = t !== b.getAttribute('data-tab'); });
     });
   });
 })();

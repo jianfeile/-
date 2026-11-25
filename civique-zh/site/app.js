@@ -30,7 +30,7 @@
   var mem = {};
   function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return mem[k] || null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { mem[k] = v; } }
-  function fresh() { return { target: '', zhOn: false, stats: {}, exams: [], sess: null, exam: null, unlock: null, pending: null, marks: {} }; }
+  function fresh() { return { target: '', zhOn: false, stats: {}, exams: [], sess: null, exam: null, unlock: null, pending: null, marks: {}, user: null, guest: 0 }; }
   var S = fresh();
   (function () {
     try { var o = JSON.parse(lsGet(LS) || 'null'); if (o && typeof o === 'object') for (var k in o) S[k] = o[k]; } catch (e) { /* start clean */ }
@@ -335,15 +335,15 @@
   }
   function syncNow(force) {
     var url = apiUrl('sync');
-    if (!url || !DB.free || !S.target) return;
+    if (!url || !DB.free || (!S.target && !S.user)) return;
     var now = Date.now();
     if (!force && now - syncAt < 60000) return;
     var ok = 0, miss = 0, ans = 0, seen = 0, best = 0, bestN = 0;
     Object.keys(S.stats).forEach(function (id) { var r = S.stats[id]; seen++; ans += r[0] || 0; if (r[2] === 1) ok++; if (r[3] > 0) miss++; });
     S.exams.forEach(function (e) { if (!e.mini && e.score >= best) { best = e.score; bestN = e.n; } });
     var body = JSON.stringify({
-      device: deviceId(), code: (S.unlock && S.unlock.code) || '', unlocked: unlocked(), ref: lsGet(REF_KEY) || '', level: S.target, examDate: S.examDate || '',
-      sum: { seen: seen, ok: ok, miss: miss, ans: ans, pool: pool().length, exams: S.exams.length, best: best, bestN: bestN },
+      device: deviceId(), login: (S.user && S.user.id) || '', code: (S.unlock && S.unlock.code) || '', unlocked: unlocked(), ref: lsGet(REF_KEY) || '', level: S.target, examDate: S.examDate || '',
+      sum: { seen: seen, ok: ok, miss: miss, ans: ans, pool: S.target ? pool().length : 0, exams: S.exams.length, best: best, bestN: bestN },
       state: { stats: S.stats, days: S.days || {}, exams: S.exams.map(function (e) { return { ts: e.ts, target: e.target, mini: e.mini, score: e.score, n: e.n, passAt: e.passAt, secs: e.secs }; }) }
     });
     if (body === syncSent) return;
@@ -419,8 +419,8 @@
     if (!subtle || !window.TextDecoder) return Promise.resolve('nocrypto');
     function online() {
       if (!CFG.api) return 'unknown';
-      return unlockViaServer({ code: fmtCode(code) }).then(function (r) {
-        return r === 'ok' || r === 'network' ? r : (r === 'bad_code' || r === 'revoked' ? 'unknown' : 'server');
+      return unlockViaServer({ code: fmtCode(code), device: deviceId() }).then(function (r) {
+        return r === 'ok' || r === 'network' || r === 'used' ? r : (r === 'bad_code' || r === 'revoked' ? 'unknown' : 'server');
       });
     }
     return loadBankFile().then(function (bank) {
@@ -438,7 +438,16 @@
     if (!S.unlock || !S.unlock.k) return Promise.resolve();
     if (!subtle || !window.TextDecoder) return Promise.resolve();
     return loadBankFile().then(function (bank) {
-      return openBank(bank, b64d(S.unlock.k)).catch(function () {
+      return openBank(bank, b64d(S.unlock.k)).then(function () {
+        // still allowed? The seller can cancel a code, and a hand-made code belongs to one device. Asked in the background.
+        var code = S.unlock.code;
+        if (!CFG.api || !normCode(code)) return;
+        ask({ code: code, device: deviceId() }).then(function (res) {
+          if (!res || (res.error !== 'revoked' && res.error !== 'used') || !S.unlock || S.unlock.code !== code) return;
+          S.unlock = null; S.sess = null; S.exam = null; DB.bank = null; useQuestions(); sanitize(); save();
+          ui.revoked = true; render(true);
+        });
+      }, function () {
         // the bank key changed since this device unlocked: try the stored code again
         return unlockWithCode(S.unlock.code).then(function (r) {
           if (r === 'unknown') { S.unlock = null; save(); ui.revoked = true; }
@@ -512,6 +521,7 @@
     return refOk(ref) ? u + '&client_reference_id=' + ref : u;
   }
   function codeError(r) {
+    if (r === 'used') return '这个解锁码已经在另一台设备上用过了。一个解锁码只能用在一台设备上' + (CFG.contact ? '，换了手机请联系 ' + CFG.contact : '') + '。';
     if (r === 'format') return '解锁码是 12 位字母和数字，例如 ABCD-2345-EFGH，请检查后再试。';
     if (r === 'unknown') return '这个解锁码不对或已失效，请核对后再试' + (CFG.contact ? '，或联系 ' + CFG.contact : '') + '。';
     if (r === 'nocrypto') return '当前浏览器不支持解锁，请点右上角用 Safari 或 Chrome 打开本页面。';
@@ -1065,6 +1075,28 @@
     grid: '<rect x="4" y="4" width="6.500" height="6.500" rx="1.800"/><rect x="13.500" y="4" width="6.500" height="6.500" rx="1.800"/><rect x="4" y="13.500" width="6.500" height="6.500" rx="1.800"/><rect x="13.500" y="13.500" width="6.500" height="6.500" rx="1.800"/>'
   };
   function pic(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + PIC[n] + '</svg>'; }
+  // ---------------------------------------------------------------- who is this: a phone number or an email, nothing to verify
+  // The seller wants to know who uses the site; the visitor may also look around first. A buyer is already known by the payment.
+  function needLogin() { return !!(CFG.login && CFG.api) && !S.user && !S.guest && !unlocked() && !S.exam && !S.pending; }
+  function loginId(raw) {
+    var v = String(raw || '').trim();
+    if (v.indexOf('@') >= 0) { v = v.toLowerCase(); return /^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)+$/.test(v) && v.length <= 120 ? { id: v, kind: 'email' } : null; }
+    v = v.replace(/[\s.\-()]/g, '');
+    return /^\+?\d{6,15}$/.test(v) ? { id: v, kind: 'phone' } : null;
+  }
+  function vLogin() {
+    return '<main class="wrap wl login">' +
+      '<header class="hero wl-hero">' + heroDeco() + six('cheer', 0, 'bob') + '<div class="txt"><p class="say wl-hi"><span>你好，我是小玛</span></p>' +
+      '<h1>法国公民考试，<br>用中文<em>看懂每一题</em></h1>' +
+      '<p class="wl-lead"><b class="wl-un">非官方</b>法语原题 + 中文讲解</p></div></header>' +
+      '<section class="card stack login-card"><h2>先登录，再开始</h2>' +
+      '<form id="loginform" class="stack"><div class="field"><input id="login" class="plain" name="login" type="text" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="手机号或邮箱" aria-label="手机号或邮箱" maxlength="120"' + (ui.loginVal ? ' value="' + esc(ui.loginVal) + '"' : '') + '></div>' +
+      '<button class="btn wide lg" type="submit"' + (ui.busy ? ' disabled' : '') + '>' + (ui.busy ? '请稍候' : '进入') + '</button>' +
+      '<p class="msg ' + (ui.loginMsg ? 'bad' : '') + '" role="status">' + esc(ui.loginMsg || '') + '</p></form>' +
+      '<p class="small">不用密码，也不用验证码。用来记住你是谁，方便售后和找回购买。买过的话，填付款时的邮箱会自动解锁。</p></section>' +
+      '<p class="center"><button class="linkbtn" type="button" data-a="guest">先不登录，试用一下</button></p>' +
+      '</main>';
+  }
   function vChoose() {
     var meta = DB.free.meta, m = meta.counts;
     function n(lv) { var c = 0; THEMES.forEach(function (t) { c += m[lv][t.id].c; }); return c; }
@@ -1205,6 +1237,9 @@
     if (unlocked()) {
       out += '<a class="card me-card done lrow" href="#unlock">' + six('celebrate', 0, '', { mini: true }) + '<span class="grow"><span class="t1">已解锁全部题目</span><span class="t2">查看解锁码</span></span><span class="go">' + icon('go') + '</span></a>';
     } else out += payBlock(t ? '免费试用中 · 开放 ' + t.have + ' / ' + t.total + ' 题' : '免费试用中');
+    if (CFG.login && CFG.api) out += S.user
+      ? '<p class="acct small">账号：<b>' + esc(S.user.id) + '</b> <button class="linkbtn" type="button" data-a="logout">退出</button></p>'
+      : '<p class="acct small">还没登录 <button class="linkbtn" type="button" data-a="login-open">用手机号或邮箱登录</button></p>';
     out += '<section class="stack"><h2>考试类型</h2><div class="seg n' + levelIds().length + '" role="group" aria-label="准备申请的类型">' + levelIds().map(function (lv) {
       return '<button data-a="target" data-v="' + lv + '" aria-pressed="' + (S.target === lv) + '"><b>' + LEVELS[lv].short + '</b><span lang="fr">' + LEVELS[lv].frs + '</span></button>';
     }).join('') + '</div></section>';
@@ -2141,6 +2176,7 @@
     closeWord();
     keepRef();
     syncNow(false);
+    if (needLogin()) { app.innerHTML = vLogin(); syncDock(); if (top) window.scrollTo(0, 0); return; }
     app.innerHTML = VIEWS[r]() + modal();
     syncDock();
     if (top) window.scrollTo(0, 0);
@@ -2324,6 +2360,9 @@
     'chk-pick': function (v) { var w = chkWalk(); if (!w.node || !w.node.o[Number(v)]) return; ui.chk = (ui.chk || []).slice(0, w.said.length).concat(Number(v)); render(true); },
     'chk-back': function (v) { ui.chk = (ui.chk || []).slice(0, Number(v)); render(true); },
     'chk-go': function (v) { if (!LEVELS[v]) return; if (S.target !== v) { S.target = v; S.sess = null; } save(); go('home'); },
+    guest: function () { S.guest = 1; save(); render(true); },
+    logout: function () { S.user = null; S.guest = 0; ui.loginVal = ''; ui.loginMsg = ''; save(); render(true); },
+    'login-open': function () { S.guest = 0; save(); render(true); },
     'reset-yes': function () { S.stats = {}; S.exams = []; S.days = {}; S.sess = null; S.exam = null; ui.modal = null; save(); render(true); }
   };
   document.addEventListener('click', function (ev) {
@@ -2341,6 +2380,23 @@
   });
   document.addEventListener('submit', function (ev) {
     if (ev.target.id === 'cform') { ev.preventDefault(); var cq = document.getElementById('cq'); if (cq) cq.blur(); return; }
+    if (ev.target.id === 'loginform') {
+      ev.preventDefault();
+      if (ui.busy) return;
+      var lv = (document.getElementById('login') || {}).value || '', who = loginId(lv);
+      ui.loginVal = lv;
+      if (!who) { ui.loginMsg = '请填手机号（只要数字）或邮箱。'; render(); return; }
+      ui.loginMsg = ''; ui.loginVal = '';
+      S.user = { id: who.id, kind: who.kind, t: Date.now() }; S.guest = 0; save();
+      if (who.kind !== 'email' || unlocked()) { render(true); syncNow(true); return; }
+      ui.busy = true; render();                      // an email: someone who already paid with it is unlocked on the spot
+      unlockViaServer({ email: who.id }).then(function (r) {
+        ui.busy = false;
+        if (r === 'ok') { ui.msg = { ok: true, text: '欢迎回来，全部题目已开放。' }; }
+        render(true); syncNow(true);
+      });
+      return;
+    }
     if (ev.target.id === 'refform') {
       ev.preventDefault();
       var rv = ((document.getElementById('ref') || {}).value || '').trim();

@@ -3,7 +3,8 @@
 //
 // POST /api/unlock with one of
 //   { "session": "cs_live_..." }   the Checkout Session id Stripe adds to the redirect after payment
-//   { "code": "XXXX-XXXX-XXXX" }   an unlock code issued here earlier (another device)
+//   { "code": "XXXX-XXXX-XXXX", "device": "..." }   an unlock code issued here earlier (another device), or one the seller made
+//                                    by hand in the admin page: those work on one device only, the first that uses them
 //   { "email": "buyer@example.com" } the email used at payment (lost code)
 // answers { ok, code, k } where k opens data/bank.json, or { error }.
 //
@@ -18,7 +19,7 @@
 //
 // Codes issued here need no database: the first half comes from the payment, the second half is a
 // signature of the first half made with a key derived from CONTENT_KEY.
-import { rememberBuyer } from './store.mjs';
+import { rememberBuyer, codeGate } from './store.mjs';
 
 const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const enc = new TextEncoder();
@@ -51,6 +52,13 @@ export async function codeForSession(env, sessionId) {
   const first = toAlpha(await sign('n:' + sessionId), 6);
   return first + toAlpha(await sign('c:' + first), 6);
 }
+// a new code for the seller to hand out: random first half, signed second half, so it is told apart from a typo
+export async function makeCode(env) {
+  const sign = await signer(env);
+  const first = toAlpha(crypto.getRandomValues(new Uint8Array(8)), 6);
+  return first + toAlpha(await sign('c:' + first), 6);
+}
+export { fmtCode };
 export async function codeIsValid(env, code) {
   const sign = await signer(env);
   return toAlpha(await sign('c:' + code.slice(0, 6)), 6) === code.slice(6);
@@ -75,7 +83,7 @@ function state(s, env) {
 }
 async function grant(env, session) {
   const code = await codeForSession(env, session.id);
-  if (revoked(env, code)) return json({ error: 'revoked' }, 403);
+  if (revoked(env, code) || (await codeGate(env, code, null)) === 'revoked') return json({ error: 'revoked' }, 403);
   await rememberBuyer(env, code, { email: (session.customer_details || {}).email || '', ref: session.client_reference_id || '', paidAt: session.created ? session.created * 1000 : null });
   return json({ ok: true, code: fmtCode(code), k: env.CONTENT_KEY });
 }
@@ -104,6 +112,9 @@ export async function handle(request, env, fetchImpl = fetch) {
       const code = normCode(body.code);
       if (!code || !(await codeIsValid(env, code))) return json({ error: 'bad_code' }, 404);
       if (revoked(env, code)) return json({ error: 'revoked' }, 403);
+      const gate = await codeGate(env, code, body.device);
+      if (gate === 'revoked') return json({ error: 'revoked' }, 403);
+      if (gate === 'used') return json({ error: 'used' }, 409);
       return json({ ok: true, code: fmtCode(code), k: env.CONTENT_KEY });
     }
     if (typeof body.email === 'string') {

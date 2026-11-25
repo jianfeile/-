@@ -55,21 +55,32 @@
     <button type="button" data-tab="users" aria-selected="true">用户</button>
     <button type="button" data-tab="refs" aria-selected="false">推荐人</button>
     <button type="button" data-tab="bank" aria-selected="false">题库</button>
+    <button type="button" data-tab="codes" aria-selected="false">解锁码</button>
   </div>
 
   <section id="t-users">
     <div class="sum" id="usum"></div>
-    <div class="row"><input id="uq" class="grow" type="search" placeholder="搜邮箱、编号、城市、推荐人" aria-label="搜索用户">
-      <select id="uf" aria-label="筛选"><option value="all">全部</option><option value="paid">已付费</option><option value="free">未付费</option></select>
+    <div class="row"><input id="uq" class="grow" type="search" placeholder="搜手机号、邮箱、城市、推荐人" aria-label="搜索用户">
+      <select id="uf" aria-label="筛选"><option value="all">全部</option><option value="paid">已付费</option><option value="free">未付费</option><option value="anon">没登录的访客</option></select>
       <button class="plain" type="button" id="reload">刷新</button></div>
     <div class="scroll" style="margin-top:8px"><table><thead><tr><th>用户</th><th>来自</th><th>地点</th><th>最近使用</th><th class="n">天数</th><th>考试</th><th class="n">做过</th><th class="n">掌握</th><th class="n">错题</th><th class="n">模考最好</th></tr></thead><tbody id="ulist"></tbody></table></div>
-    <p class="small">点一行看这个人的学习情况。付费用户显示付款邮箱；没付费的是匿名访客，只有一个设备编号。地点按网络地址估计，只到城市。</p>
+    <p class="small">点一行看这个人的学习情况。登录的人显示手机号或邮箱（没有验证过，是对方自己填的）；付费用户显示付款邮箱；跳过登录的是匿名访客，只有一个设备编号。地点按网络地址估计，只到城市。</p>
     <div id="udetail"></div>
   </section>
 
   <section id="t-refs" hidden>
     <div class="scroll"><table><thead><tr><th>推荐人</th><th class="n">带来的人</th><th class="n">其中已付费</th><th class="n">近 7 天还在用</th></tr></thead><tbody id="rlist"></tbody></table></div>
     <p class="small">这里按“谁的链接带来了谁”统计，包括还没付费的人。佣金按实际收款算，在“销售和佣金”页。</p>
+  </section>
+
+  <section id="t-codes" hidden>
+    <div class="row"><label for="cn" style="margin:0">生成</label><input id="cn" type="number" min="1" max="50" value="1" style="flex:0 0 84px" aria-label="个数"><span>个</span>
+      <input id="cnote" class="grow" type="text" maxlength="80" placeholder="备注（给谁的、为什么送），可不填" aria-label="备注"><button type="button" id="cnew">生成解锁码</button></div>
+    <div id="cmade" class="card" hidden></div>
+    <div class="scroll" style="margin-top:10px"><table><thead><tr><th>解锁码</th><th>备注</th><th>生成时间</th><th>状态</th><th>操作</th></tr></thead><tbody id="clist"></tbody></table></div>
+    <p class="small">这里生成的解锁码，<b>一个只能用在一台设备上</b>：第一台输入它的设备算数，别的设备再输会被拒绝。客户换了手机，点“换设备”让它能重新用一次。“作废”后，用着它的设备下次打开网站就会被锁回试用。</p>
+    <div class="row" style="margin-top:14px"><input id="cdel" class="grow" type="text" placeholder="作废一个付款后自动发的解锁码：填码" aria-label="要作废的解锁码"><button type="button" class="danger" id="cdelgo">作废</button></div>
+    <p class="small">付款后自动发的码不在上面的列表里，买家可以在自己的几台设备上用。发现被公开传播时，在这里填码作废。</p>
   </section>
 
   <section id="t-bank" hidden>

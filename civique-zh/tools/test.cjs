@@ -135,12 +135,12 @@ if (CODE) {
   const browser = await chromium.launch();
   const errors = [];
   async function fresh(opts) {
-    const ctx = await browser.newContext(Object.assign({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 1, locale: 'zh-CN', serviceWorkers: 'block' }, opts || {}));
+    const ctx = await browser.newContext(Object.assign({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 1, locale: 'zh-CN', serviceWorkers: 'block' }, opts || {}, { cfg: undefined }));
     // the tests describe a site with no payment link and no contact yet; the ones about those set their own
-    await ctx.addInitScript(() => {
+    await ctx.addInitScript((extra) => {
       let cfg;
-      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '' }); } });
-    });
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '', login: false }, extra); } });
+    }, (opts && opts.cfg) || {});
     const page = await ctx.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.g|ERR_|Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -977,7 +977,7 @@ if (CODE) {
     // no contact in the settings: the question number in a sheet, with a copy button
     await page.addInitScript(() => {
       let cfg;
-      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '' }); } });
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '', login: false }); } });
     });
     await page.goto(base + '#home');
     await page.reload();
@@ -999,7 +999,7 @@ if (CODE) {
     ({ ctx, page } = await fresh());
     await page.addInitScript(() => {
       let cfg;
-      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: 'aide@example.com', payUrl: 'https://pay.example.com/x' }); } });
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: 'aide@example.com', payUrl: 'https://pay.example.com/x', login: false }); } });
     });
     await page.goto(base);
     await page.locator('[data-a="target"][data-v="csp"]').click();
@@ -1180,6 +1180,129 @@ if (CODE) {
     check('admin page: no sideways scroll on a phone', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await adm('patch-del', { qid: freeQ.id }); await adm('patch-del', { qid: 'ZZPAID1' });
     await ctx.close();
+  }
+
+  // ---- codes the seller makes by hand: one device each; any code can be cancelled
+  console.log('seller-made codes');
+  {
+    const adm = async (op, more) => (await adminCore.admin(new Request('http://x/api/admin', { method: 'POST', body: JSON.stringify(Object.assign({ key: ENV.ADMIN_KEY, op }, more || {})) }), ENV, CF)).json();
+    const unlock = async (body) => core.handle(new Request('http://x/api/unlock', { method: 'POST', body: JSON.stringify(body) }), ENV, stripeStandIn);
+    const made = (await adm('code-new', { n: 3, note: '送给老王' })).codes;
+    check('codes: the seller gets as many as asked, all different, in the usual shape', made.length === 3 && new Set(made).size === 3 && made.every((c) => /^[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}$/.test(c)), made.join(' '));
+    const A = 'aaaaaaaaaaaaaaaa', B = 'bbbbbbbbbbbbbbbb';
+    check('codes: without a device number a hand-made code is not given away', (await unlock({ code: made[0] })).status === 409);
+    const first = await unlock({ code: made[0], device: A });
+    check('codes: the first device to use one is unlocked', first.status === 200 && (await first.json()).k === ENV.CONTENT_KEY);
+    check('codes: a second device is refused, the first keeps working', (await unlock({ code: made[0], device: B })).status === 409 && (await unlock({ code: made[0], device: A })).status === 200);
+    let listed = (await adm('codes')).codes.find((c) => c.code === made[0]);
+    check('codes: the list shows the note, that it was used, and by which device', listed.note === '送给老王' && listed.used_by === A && listed.used_at > 0 && !listed.revoked, JSON.stringify(listed));
+    await adm('code-reset', { code: made[0] });
+    check('codes: "new phone" lets it be used once more, on the next device', (await unlock({ code: made[0], device: B })).status === 200 && (await unlock({ code: made[0], device: A })).status === 409);
+    await adm('code-del', { code: made[0] });
+    check('codes: a cancelled code stops working everywhere', (await unlock({ code: made[0], device: B })).status === 403 && (await adm('codes')).codes.find((c) => c.code === made[0]).revoked === true);
+    const paidCode = (await (await unlock({ session: 'cs_live_PAID00000001' })).json()).code;
+    check('codes: one issued after a payment still works on several devices', (await unlock({ code: paidCode, device: A })).status === 200 && (await unlock({ code: paidCode, device: B })).status === 200);
+    check('codes: junk cannot be cancelled', (await adminCore.admin(new Request('http://x/api/admin', { method: 'POST', body: JSON.stringify({ key: ENV.ADMIN_KEY, op: 'code-del', code: 'nope' }) }), ENV, CF)).status === 400);
+
+    // in the app: unlock with a hand-made code, then the seller cancels it
+    if (CODE) {
+      const realKey = require('child_process').execFileSync('node', [path.resolve(__dirname, 'bank.mjs'), 'key', '--code', CODE]).toString().trim().split('\n').pop();
+      const keep = ENV.CONTENT_KEY; ENV.CONTENT_KEY = realKey;
+      const mine = (await adm('code-new', { n: 1 })).codes[0];
+      ({ ctx, page } = await fresh({ cfg: { payUrl: 'https://pay.example.com/x' } }));
+      await page.goto(base);
+      await page.locator('[data-a="target"][data-v="csp"]').click();
+      await page.waitForSelector('.themes');
+      await page.goto(base + '#unlock');
+      await page.waitForSelector('.gets');
+      await page.locator('#have-code summary').click();
+      await page.fill('#code', mine);
+      await page.locator('#codeform button').click();
+      await page.waitForFunction(() => { try { return !!JSON.parse(localStorage.getItem('civique.v1')).unlock; } catch (e) { return false; } }, null, { timeout: 15000 });
+      check('codes: a hand-made code typed in the app opens the whole bank', (await state(page)).unlock.code === mine);
+      const other = await fresh({ cfg: { payUrl: 'https://pay.example.com/x' } });
+      await other.page.goto(base);
+      await other.page.locator('[data-a="target"][data-v="csp"]').click();
+      await other.page.goto(base + '#unlock');
+      await other.page.waitForSelector('.gets');
+      await other.page.locator('#have-code summary').click();
+      await other.page.fill('#code', mine);
+      await other.page.locator('#codeform button').click();
+      await other.page.waitForSelector('#codeform .msg.bad');
+      check('codes: on a second phone the app says the code is already in use', /已经在另一台设备上用过/.test(await other.page.locator('#codeform .msg').innerText()) && !(await state(other.page)).unlock);
+      await other.ctx.close();
+      await adm('code-del', { code: mine });
+      await page.reload();
+      await page.waitForFunction(() => { try { return !JSON.parse(localStorage.getItem('civique.v1')).unlock; } catch (e) { return false; } }, null, { timeout: 15000 });
+      check('codes: once cancelled, the phone that used it is back to the free trial at its next visit', !(await state(page)).unlock);
+      await ctx.close();
+      ENV.CONTENT_KEY = keep;
+    }
+
+    ({ ctx, page } = await fresh());
+    await page.goto(base + 'admin.html');
+    await page.fill('#k', ENV.ADMIN_KEY);
+    await page.locator('#f button').click();
+    await page.waitForSelector('#main:not([hidden])');
+    await page.locator('.tabs [data-tab="codes"]').click();
+    await page.fill('#cn', '2');
+    await page.fill('#cnote', '小红书活动');
+    await page.locator('#cnew').click();
+    await page.waitForSelector('#cmade-text');
+    const shownCodes = (await page.inputValue('#cmade-text')).split('\n');
+    await page.waitForFunction((c) => document.getElementById('clist').innerText.includes(c), shownCodes[0]);
+    check('admin page: codes are made on request and listed with their note and state', shownCodes.length === 2 && /小红书活动/.test(await page.locator('#clist').innerText()) && /未使用/.test(await page.locator('#clist').innerText()) && /已作废/.test(await page.locator('#clist').innerText()));
+    const rowOf = page.locator('#clist tr', { hasText: shownCodes[0] });
+    await rowOf.locator('button.danger').click();
+    await rowOf.locator('button.danger').click();
+    await page.waitForFunction(() => /已作废。$/.test(document.getElementById('msg').textContent));
+    check('admin page: cancelling a code asks twice, then it is cancelled', (await adm('codes')).codes.find((c) => c.code === shownCodes[0]).revoked === true);
+    check('admin page: the codes tab fits a phone', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    await ctx.close();
+  }
+
+  // ---- signing in with a phone number or an email
+  console.log('sign-in');
+  {
+    const adm = async (op, more) => (await adminCore.admin(new Request('http://x/api/admin', { method: 'POST', body: JSON.stringify(Object.assign({ key: ENV.ADMIN_KEY, op }, more || {})) }), ENV, CF)).json();
+    const hasUser = async (id) => { for (let i = 0; i < 40; i++) { const u = (await adm('users')).users.find((x) => x.id === id); if (u) return u; await new Promise((r) => setTimeout(r, 100)); } return null; };
+    ({ ctx, page } = await fresh({ cfg: { login: true } }));
+    await page.goto(base + '?r=wang');
+    await page.waitForSelector('#loginform');
+    check('sign-in: the first screen asks for a phone number or an email, and nothing else is offered yet', await page.locator('[data-a="target"]').count() === 0 && await page.locator('.tabs').count() === 0 && await noOverflow(page));
+    await page.fill('#login', 'not a phone');
+    await page.locator('#loginform button').click();
+    await page.waitForSelector('#loginform .msg.bad');
+    check('sign-in: something that is neither is refused, and what was typed stays', await page.inputValue('#login') === 'not a phone');
+    await page.fill('#login', '+33 6 12 34 56 78');
+    await page.locator('#loginform button').click();
+    await page.waitForSelector('[data-a="target"]');
+    const phone = await hasUser('u:+33612345678');
+    check('sign-in: a phone number goes straight in, and the seller sees it with who sent this person', !!phone && phone.login === '+33612345678' && phone.ref === 'wang', JSON.stringify(phone));
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForSelector('.themes');
+    await page.goto(base + '#me');
+    await page.waitForSelector('.acct');
+    check('sign-in: the account shows on "me", with a way out', (await page.locator('.acct').innerText()).includes('+33612345678'));
+    await page.locator('[data-a="logout"]').click();
+    await page.waitForSelector('#loginform');
+    await page.locator('[data-a="guest"]').click();
+    await page.waitForSelector('.acct');
+    check('sign-in: it can be skipped, and offered again later from "me"', /还没登录/.test(await page.locator('.acct').innerText()) && (await state(page)).guest === 1);
+    await page.locator('[data-a="login-open"]').click();
+    await page.waitForSelector('#loginform');
+    await page.fill('#login', 'Buyer@Example.com');
+    await page.locator('#loginform button').click();
+    await page.waitForFunction(() => { try { return !!JSON.parse(localStorage.getItem('civique.v1')).unlock; } catch (e) { return false; } }, null, { timeout: 8000 }).catch(() => {});
+    const st = await state(page);
+    check('sign-in: the email of an earlier payment unlocks on the spot', !!st.unlock && st.user.id === 'buyer@example.com', JSON.stringify({ unlock: !!st.unlock, user: st.user }));
+    await ctx.close();
+    ({ ctx, page } = await fresh({ cfg: { login: true, api: '' } }));
+    await page.goto(base);
+    await page.waitForSelector('[data-a="target"]');
+    check('sign-in: not asked on hosting without the site\'s own service', await page.locator('#loginform').count() === 0);
+    await ctx.close();
+    await adm('user-del', { id: 'u:+33612345678' });
   }
 
   // ---- the word note must never stop someone finishing a set (found on a real phone)

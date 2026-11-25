@@ -5,7 +5,7 @@
 //   POST /api/admin    { key: ADMIN_KEY, op, ... } for the admin page
 //
 // Settings: DB (D1 binding), CONTENT_KEY (corrections to paid questions are encrypted with it), ADMIN_KEY.
-import { codeIsValid, normCode } from './unlock-core.mjs';
+import { codeIsValid, normCode, makeCode, fmtCode } from './unlock-core.mjs';
 import { ensure, clip, refOk, parisDay } from './store.mjs';
 
 const enc = new TextEncoder();
@@ -59,30 +59,35 @@ export async function sync(request, env, cf) {
   if (!body || typeof body.device !== 'string' || !/^[a-f0-9]{16,32}$/.test(body.device)) return json({ error: 'bad_request' }, 400);
   const code = normCode(body.code);
   const buyer = !!(code && env.CONTENT_KEY && await codeIsValid(env, code));
-  const id = buyer ? 'b:' + code : 'v:' + body.device, now = Date.now();
+  let login = typeof body.login === 'string' ? body.login.trim().toLowerCase() : '';
+  if (!(login.length <= 120 && (/^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)+$/.test(login) || /^\+?\d{6,15}$/.test(login)))) login = '';
+  const id = buyer ? 'b:' + code : (login ? 'u:' + login : 'v:' + body.device), now = Date.now();
   const ref = refOk(body.ref), geo = cf || {};
   const level = /^[a-z]{2,4}$/.test(body.level || '') ? body.level : '';
   const examDate = /^\d{4}-\d\d-\d\d$/.test(body.examDate || '') ? body.examDate : '';
   const stmts = [];
-  if (buyer) {
-    // the same person as the visitor this device was until now: keep when they first came and who sent them, drop the visitor
-    const was = await d.prepare('SELECT created, ref FROM users WHERE id = ?1').bind('v:' + body.device).first();
+  // the same person as the visitor this device was until now (and, once they pay, as the account they signed in with):
+  // keep when they first came and who sent them, drop the earlier line
+  const earlier = ['v:' + body.device].concat(buyer && login ? ['u:' + login] : []).filter((x) => x !== id);
+  for (const old of earlier) {
+    const was = await d.prepare('SELECT created, ref FROM users WHERE id = ?1').bind(old).first();
     if (was) {
       stmts.push(d.prepare(`INSERT INTO users (id, ref, created, last_seen) VALUES (?1, ?2, ?3, ?4)
         ON CONFLICT(id) DO UPDATE SET created = MIN(users.created, excluded.created), ref = CASE WHEN users.ref IS NULL OR users.ref = '' THEN excluded.ref ELSE users.ref END`)
         .bind(id, refOk(was.ref), was.created || now, now));
-      stmts.push(d.prepare('UPDATE days SET user = ?1 WHERE user = ?2 AND day NOT IN (SELECT day FROM days WHERE user = ?1)').bind(id, 'v:' + body.device));
-      stmts.push(d.prepare('DELETE FROM days WHERE user = ?1').bind('v:' + body.device));
-      stmts.push(d.prepare('DELETE FROM users WHERE id = ?1').bind('v:' + body.device));
+      stmts.push(d.prepare('UPDATE days SET user = ?1 WHERE user = ?2 AND day NOT IN (SELECT day FROM days WHERE user = ?1)').bind(id, old));
+      stmts.push(d.prepare('DELETE FROM days WHERE user = ?1').bind(old));
+      stmts.push(d.prepare('DELETE FROM users WHERE id = ?1').bind(old));
     }
   }
-  stmts.push(d.prepare(`INSERT INTO users (id, ref, device, created, last_seen, country, city, ua, level, exam_date, unlocked, sum, state)
-    VALUES (?1, ?2, ?3, ?4, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+  stmts.push(d.prepare(`INSERT INTO users (id, ref, device, created, last_seen, country, city, ua, level, exam_date, unlocked, sum, state, login)
+    VALUES (?1, ?2, ?3, ?4, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
     ON CONFLICT(id) DO UPDATE SET ref = CASE WHEN users.ref IS NULL OR users.ref = '' THEN excluded.ref ELSE users.ref END,
       device = excluded.device, last_seen = excluded.last_seen, country = excluded.country, city = excluded.city, ua = excluded.ua,
-      level = excluded.level, exam_date = excluded.exam_date, unlocked = excluded.unlocked, sum = excluded.sum, state = excluded.state`)
+      level = excluded.level, exam_date = excluded.exam_date, unlocked = excluded.unlocked, sum = excluded.sum, state = excluded.state,
+      login = CASE WHEN excluded.login != '' THEN excluded.login ELSE users.login END`)
     .bind(id, ref, body.device, now, clip(geo.country, 8), clip(geo.city, 80), clip(request.headers.get('user-agent') || '', 200), level, examDate,
-      buyer || body.unlocked ? 1 : 0, JSON.stringify(tidySum(body.sum)), JSON.stringify(tidyState(body.state))));
+      buyer || body.unlocked ? 1 : 0, JSON.stringify(tidySum(body.sum)), JSON.stringify(tidyState(body.state)), login));
   stmts.push(d.prepare('INSERT INTO days (user, day, n) VALUES (?1, ?2, 1) ON CONFLICT(user, day) DO UPDATE SET n = n + 1').bind(id, parisDay(now)));
   await d.batch(stmts);
   return json({ ok: true });
@@ -117,7 +122,7 @@ export async function patches(request, env) {
 }
 
 // ---------------------------------------------------------------- /api/admin
-const LIST = 'id, email, ref, created, paid_at, last_seen, country, city, ua, level, exam_date, unlocked, sum, (SELECT COUNT(*) FROM days WHERE days.user = users.id) AS days';
+const LIST = 'id, login, email, ref, created, paid_at, last_seen, country, city, ua, level, exam_date, unlocked, sum, (SELECT COUNT(*) FROM days WHERE days.user = users.id) AS days';
 export async function admin(request, env) {
   if (request.method !== 'POST') return json({ error: 'method' }, 405);
   if (String(env.ADMIN_KEY || '').length < 16) return json({ error: 'not_configured' }, 503);
@@ -139,6 +144,25 @@ export async function admin(request, env) {
   if (op === 'user-del') {          // someone asked for their record to be erased
     const id = String(body.id || '');
     await d.batch([d.prepare('DELETE FROM days WHERE user = ?1').bind(id), d.prepare('DELETE FROM users WHERE id = ?1').bind(id)]);
+    return json({ ok: true });
+  }
+  if (op === 'codes') {
+    const rows = (await d.prepare('SELECT code, note, created, used_at, used_by, revoked FROM codes ORDER BY created DESC LIMIT 2000').all()).results || [];
+    return json({ ok: true, codes: rows.map((r) => Object.assign(r, { code: fmtCode(r.code), revoked: !!r.revoked })) });
+  }
+  if (op === 'code-new') {
+    if (!env.CONTENT_KEY) return json({ error: 'not_configured' }, 503);
+    const n = Math.max(1, Math.min(50, Math.floor(Number(body.n) || 1))), note = clip(body.note, 80), made = [], now = Date.now();
+    for (let i = 0; i < n; i++) made.push(await makeCode(env));
+    await d.batch(made.map((c) => d.prepare('INSERT OR IGNORE INTO codes (code, note, created) VALUES (?1, ?2, ?3)').bind(c, note, now)));
+    return json({ ok: true, codes: made.map(fmtCode) });
+  }
+  if (op === 'code-del' || op === 'code-reset') {
+    const code = normCode(body.code);
+    if (!code) return json({ error: 'bad_request' }, 400);
+    if (op === 'code-reset') await d.prepare('UPDATE codes SET used_by = NULL, used_at = NULL WHERE code = ?1').bind(code).run();   // a buyer changed phone
+    // cancelling also works for a code issued after a payment, which is not in the list until now
+    else await d.prepare('INSERT INTO codes (code, note, created, revoked) VALUES (?1, ?2, ?3, 1) ON CONFLICT(code) DO UPDATE SET revoked = 1').bind(code, '付款后发的码', Date.now()).run();
     return json({ ok: true });
   }
   if (op === 'key') return json({ ok: true, k: env.CONTENT_KEY || '' });         // the admin page opens the bank file with it, to show the questions

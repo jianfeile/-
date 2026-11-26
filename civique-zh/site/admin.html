@@ -42,6 +42,14 @@
   .fr { font-weight: 700; } label { display: block; font-size: 13px; color: var(--ink2); margin: 10px 0 3px; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } @media (max-width: 620px) { .two { grid-template-columns: 1fr; } }
   #msg { color: var(--bad); font-weight: 700; min-height: 1.6em; }
+  .pad { position: relative; width: 252px; height: 252px; margin: 6px auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  .pad svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .pad i { position: absolute; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; border: 3px solid var(--line); pointer-events: none; }
+  .pad i::after { content: ""; position: absolute; inset: 19px; border-radius: 50%; background: var(--ink2); }
+  .pad i.on { border-color: var(--g); } .pad i.on::after { background: var(--g); inset: 14px; }
+  .pad.bad i.on { border-color: var(--bad); } .pad.bad i.on::after { background: var(--bad); }
+  .center { text-align: center; }
+  .link { background: none; border: 0; padding: 8px 4px; color: var(--gt); font-weight: 700; text-decoration: underline; cursor: pointer; }
   #msg.ok { color: var(--gt); }
   [hidden] { display: none !important; }
 </style>
@@ -49,6 +57,11 @@
 <body>
 <div class="row"><h1 class="grow">管理后台</h1><a class="small" href="sales.html">销售和佣金</a></div>
 <form id="f" class="row" style="margin-top:12px"><input id="k" class="grow" type="password" autocomplete="current-password" placeholder="管理密码" aria-label="管理密码"><input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="验证器 6 位数字" aria-label="验证器 6 位数字" style="flex:0 1 170px"><button type="submit">进入</button></form>
+<div id="pat" hidden class="center" style="margin-top:12px">
+  <h2 style="margin:0">滑动手势进入</h2>
+  <div class="pad" id="pad-in" aria-label="手势密码"></div>
+  <button type="button" class="link" id="usepw">改用密码登录</button>
+</div>
 <p id="msg" role="status"></p>
 <div id="main" hidden>
   <div class="tabs" role="tablist">
@@ -56,6 +69,7 @@
     <button type="button" data-tab="refs" aria-selected="false">推荐人</button>
     <button type="button" data-tab="bank" aria-selected="false">题库</button>
     <button type="button" data-tab="codes" aria-selected="false">解锁码</button>
+    <button type="button" data-tab="safe" aria-selected="false">安全</button>
   </div>
 
   <section id="t-users">
@@ -102,6 +116,19 @@
     <p class="small">“带来的人”包括还没付费的。“订单、收款”直接取自 Stripe，没有扣手续费和退款；佣金按每个人自己的比例算。没有登记过的代号（有人自己在网址里写的）也会列出来，标“未登记”。</p>
   </section>
 
+  <section id="t-safe" hidden>
+    <div class="card">
+      <h3 style="margin-top:0">这台设备的手势</h3>
+      <p class="small" id="patstate"></p>
+      <div id="setpat" hidden class="center"><p id="setpat-say" style="font-weight:700"></p><div class="pad" id="pad-set" aria-label="设置手势"></div><button type="button" class="link" id="setpat-cancel">取消</button></div>
+      <div class="row"><button type="button" id="setpat-go">设置手势</button><button type="button" class="danger" id="patdrop" hidden>这台设备不再用手势</button><button type="button" class="plain" id="logout">退出登录</button></div>
+      <p class="small">设好之后，这台设备 30 天内打开后台只要滑手势，不用输密码和验证码；30 天后用密码和验证码登录一次再重设。手势连错 5 次，这台设备会被忘掉，要重新用密码登录。手势至少连 4 个点。设置手势要在用密码登录后的 15 分钟内做。</p>
+    </div>
+    <h3>记住的设备</h3>
+    <div class="scroll"><table><thead><tr><th>设备</th><th>登记时间</th><th>最近使用</th><th></th></tr></thead><tbody id="devlist"></tbody></table></div>
+    <p class="small">手机丢了或换了，在这里把它移除。改了管理密码，所有设备的手势都会失效。</p>
+  </section>
+
   <section id="t-codes" hidden>
     <div class="row"><label for="cn" style="margin:0">生成</label><input id="cn" type="number" min="1" max="50" value="1" style="flex:0 0 84px" aria-label="个数"><span>个</span>
       <input id="cnote" class="grow" type="text" maxlength="80" placeholder="备注（给谁的、为什么送），可不填" aria-label="备注"><button type="button" id="cnew">生成解锁码</button></div>
@@ -121,6 +148,6 @@
 </div>
 <script src="vendor/qrcode.js?v=18ae399f81"></script>
 <script src="poster.js?v=dbf646ced0"></script>
-<script src="admin.js?v=8d88d68b6f"></script>
+<script src="admin.js?v=6617ac462f"></script>
 </body>
 </html>

@@ -11,6 +11,8 @@ const SCHEMA = [
   // the devices on which a code issued after a payment was used (a purchase is for one person: a few devices, not a crowd)
   `CREATE TABLE IF NOT EXISTS code_devices (code TEXT, device TEXT, t INTEGER, PRIMARY KEY (code, device))`,
   `CREATE TABLE IF NOT EXISTS auth_fail (t INTEGER)`,
+  // phones the seller signed in on and chose to remember: there a swipe pattern opens the admin pages (see auth.mjs)
+  `CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, secret TEXT, pattern TEXT, label TEXT, created INTEGER, last INTEGER, fails INTEGER DEFAULT 0)`,
   // the people the seller gave a link to: kaocivique.com/?r=<code>
   `CREATE TABLE IF NOT EXISTS refs (code TEXT PRIMARY KEY, name TEXT, pct INTEGER, created INTEGER)`,       // wrong tries at the admin door
   `CREATE TABLE IF NOT EXISTS codes (code TEXT PRIMARY KEY, note TEXT, created INTEGER, used_at INTEGER, used_by TEXT, revoked INTEGER DEFAULT 0)`,

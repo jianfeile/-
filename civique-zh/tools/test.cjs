@@ -1329,10 +1329,10 @@ if (CODE) {
     check('authenticator: the password alone is no longer enough', (await (await call({ key: ENV.ADMIN_KEY, op: 'users' }, E2)).json()).error === 'otp_required');
     check('authenticator: a wrong code is refused', (await (await call({ key: ENV.ADMIN_KEY, otp: now === '000000' ? '111111' : '000000', op: 'users' }, E2)).json()).error === 'bad_otp');
     const login = await (await call({ key: ENV.ADMIN_KEY, otp: now, op: 'login' }, E2)).json();
-    check('authenticator: password and code give a pass for the session', login.ok && /^\d{13}\.[0-9a-f]{64}$/.test(login.token), JSON.stringify(login).slice(0, 80));
+    check('authenticator: password and code give a pass for the session', login.ok && /^\d{13}\.f\.[0-9a-f]{64}$/.test(login.token), JSON.stringify(login).slice(0, 80));
     check('authenticator: the pass works without the password, a forged or foreign one does not', (await (await call({ token: login.token, op: 'users' }, E2)).json()).ok === true
       && (await call({ token: login.token.replace(/.$/, (c) => (c === '0' ? '1' : '0')), op: 'users' }, E2)).status === 403 && (await call({ token: login.token, op: 'users' }, ENV)).status === 403);
-    const old = (Date.now() - 1000) + '.' + 'ab'.repeat(32);
+    const old = (Date.now() - 1000) + '.f.' + 'ab'.repeat(32);
     check('authenticator: a pass with a changed date is refused', (await call({ token: old, op: 'users' }, E2)).status === 403);
     const expired = await auth.newToken(E2, Date.now() - 13 * 3600000);
     check('authenticator: a pass ends after twelve hours', (await (await call({ token: expired.token, op: 'users' }, E2)).json()).error === 'expired');
@@ -1394,6 +1394,80 @@ if (CODE) {
     check('home screen: inside WeChat on an iPhone, the steps start with leaving WeChat, then Safari\'s share button', steps.length === 4 && /你现在在微信里/.test(steps[0]) && /苹果手机/.test(steps[1]) && /添加到主屏幕/.test(steps[1]) && /重新登录/.test(steps[3]) && await noOverflow(page), steps.join(' | '));
     await page.locator('.sheet [data-a="close"]').click();
     check('home screen: the sheet closes', await page.locator('.sheet').count() === 0);
+    await ctx.close();
+  }
+
+  // ---- a remembered device: the swipe pattern
+  console.log('swipe pattern');
+  {
+    const auth = await import(require('url').pathToFileURL(path.resolve(__dirname, '..', 'server', 'auth.mjs')).href);
+    const E5 = Object.assign({}, ENV, { DB: d1() });
+    const call = async (body, env) => adminCore.admin(new Request('http://x/api/admin', { method: 'POST', headers: { 'user-agent': 'TestPhone iPhone' }, body: JSON.stringify(body) }), env || E5, CF);
+    const full = await (await call({ key: ENV.ADMIN_KEY, op: 'login' })).json();
+    check('pattern: too short, repeated dots or junk are not patterns', !auth.patternOk('0-1-2') && !auth.patternOk('0-1-0-2') && !auth.patternOk('0-1-2-9') && auth.patternOk('0-1-2-5') && auth.patternOk('0-1-2-5-8-7-6-3-4'));
+    check('pattern: a short one is refused when the device is added', (await call({ token: full.token, op: 'device-add', pattern: '0-1' })).status === 400);
+    const dev = await (await call({ token: full.token, op: 'device-add', pattern: '0-1-2-5-8' })).json();
+    check('pattern: after a password sign-in the device gets a number and a secret', dev.ok && /^[0-9a-f]{16}$/.test(dev.device) && /^[0-9a-f]{48}$/.test(dev.secret), JSON.stringify(dev).slice(0, 80));
+    const viaPat = await (await call({ device: dev.device, secret: dev.secret, pattern: '0-1-2-5-8', op: 'login' })).json();
+    check('pattern: the right pattern on that device opens the door, and the pass works', viaPat.ok && /^\d{13}\.d\./.test(viaPat.token) && (await (await call({ token: viaPat.token, op: 'users' })).json()).ok === true);
+    check('pattern: a pass obtained with a pattern cannot register another device', (await (await call({ token: viaPat.token, op: 'device-add', pattern: '0-1-2-5-8' })).json()).error === 'full_login_needed');
+    check('pattern: the pattern without the device\'s secret is worth nothing', (await (await call({ device: dev.device, secret: 'f'.repeat(48), pattern: '0-1-2-5-8', op: 'login' })).json()).error === 'device_unknown');
+    const wrong = [];
+    for (let i = 0; i < 5; i++) wrong.push(await (await call({ device: dev.device, secret: dev.secret, pattern: '0-3-6-7-8', op: 'login' })).json());
+    check('pattern: wrong ones are counted down, the fifth forgets the device, and then even the right pattern is refused', wrong.slice(0, 4).map((x) => x.error + x.left).join() === 'bad_pattern4,bad_pattern3,bad_pattern2,bad_pattern1' && wrong[4].error === 'device_forgotten'
+      && (await (await call({ device: dev.device, secret: dev.secret, pattern: '0-1-2-5-8', op: 'login' })).json()).error === 'device_unknown', wrong.map((x) => x.error + (x.left || '')).join());
+    const E6 = Object.assign({}, ENV, { DB: d1() });
+    const f6 = await (await call({ key: ENV.ADMIN_KEY, op: 'login' }, E6)).json();
+    const d6 = await (await call({ token: f6.token, op: 'device-add', pattern: '2-4-6-7' }, E6)).json();
+    check('pattern: a remembered device lasts thirty days', (await auth.authorize({ device: d6.device, secret: d6.secret, pattern: '2-4-6-7' }, E6, Date.now() + 29 * 86400000)).ok === true
+      && (await auth.authorize({ device: d6.device, secret: d6.secret, pattern: '2-4-6-7' }, E6, Date.now() + 31 * 86400000)).error === 'device_expired');
+    const d7 = await (await call({ token: f6.token, op: 'device-add', pattern: '2-4-6-7' }, E6)).json();
+    check('pattern: changing the password forgets every pattern', (await (await call({ device: d7.device, secret: d7.secret, pattern: '2-4-6-7', op: 'login' }, Object.assign({}, E6, { ADMIN_KEY: 'another-password-0123456789' }))).json()).error === 'bad_pattern');
+    const stale = await auth.newToken(E6, Date.now() - 16 * 60000);
+    check('pattern: a device can only be added within a quarter of an hour of the password sign-in', (await (await call({ token: stale.token, op: 'device-add', pattern: '2-4-6-7' }, E6)).json()).error === 'full_login_needed');
+
+    // in the browser, with a finger
+    ({ ctx, page } = await fresh({ hasTouch: true }));
+    await page.goto(base + 'admin.html');
+    check('admin: without a remembered device the password form is shown, not the pad', await page.locator('#f').isVisible() && !(await page.locator('#pat').isVisible()));
+    await page.fill('#k', ENV.ADMIN_KEY);
+    await page.locator('#f button').click();
+    await page.waitForSelector('#main:not([hidden])');
+    await page.locator('.tabs [data-tab="safe"]').click();
+    await page.locator('#setpat-go').click();
+    const swipe = async (sel, dotsSeq) => {
+      await page.locator(sel).scrollIntoViewIfNeeded();
+      const box = await page.locator(sel).boundingBox();
+      const at = (n) => [box.x + box.width / 6 + (n % 3) * box.width / 3, box.y + box.height / 6 + Math.floor(n / 3) * box.height / 3];
+      await page.mouse.move(...at(dotsSeq[0])); await page.mouse.down();
+      for (const n of dotsSeq.slice(1)) await page.mouse.move(...at(n), { steps: 6 });
+      await page.mouse.up();
+    };
+    await swipe('#pad-set', [0, 1, 2]);
+    check('admin: a three-dot pattern is refused', /至少连 4 个点/.test(await page.locator('#setpat-say').innerText()));
+    await page.waitForTimeout(800);
+    await swipe('#pad-set', [0, 2, 8, 6]);
+    await page.waitForFunction(() => /再画一次确认/.test(document.getElementById('setpat-say').textContent));
+    await swipe('#pad-set', [0, 2, 8, 6]);
+    await page.waitForFunction(() => /手势设好了/.test(document.getElementById('msg').textContent));
+    const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('civique.admin.dev')));
+    check('admin: drawn twice the same, the pattern is set; the phone keeps a secret and not the pattern or the password', !!kept.device && !!kept.secret && Object.keys(kept).sort().join() === 'device,secret' && /这台/.test(await page.locator('#devlist').innerText()), JSON.stringify(Object.keys(kept)));
+    await page.evaluate(() => sessionStorage.clear());
+    await page.reload();
+    await page.waitForSelector('#pat:not([hidden])');
+    check('admin: next visit, the pad is shown instead of the password form', !(await page.locator('#f').isVisible()) && !(await page.locator('#main').isVisible()));
+    await swipe('#pad-in', [0, 3, 6, 7]);
+    await page.waitForFunction(() => /手势不对，还能试 4 次/.test(document.getElementById('msg').textContent));
+    check('admin: a wrong swipe does not open anything', !(await page.locator('#main').isVisible()));
+    await page.waitForTimeout(800);
+    await swipe('#pad-in', [0, 2, 8, 6]);          // passing over dots 1, 5 and 7 takes them: the same as when it was set
+    await page.waitForSelector('#main:not([hidden])');
+    check('admin: the right swipe opens the admin page, no password and no code typed', await page.locator('#ulist tr').count() > 0);
+    await page.locator('.tabs [data-tab="safe"]').click();
+    await page.locator('#logout').click();
+    await page.waitForSelector('#pat:not([hidden])');
+    await page.locator('#usepw').click();
+    check('admin: signing out goes back to the pad, and the password form is still one tap away', await page.locator('#f').isVisible() && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await ctx.close();
   }
 

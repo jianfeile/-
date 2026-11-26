@@ -21,7 +21,7 @@
       .then(function (d) { if (d.error === 'expired' || (d.error === 'forbidden' && TOKEN)) signOut('登录已过期，请重新输入密码。'); return d; });
   }
   function why(e) {
-    return e === 'forbidden' ? '密码不对。' : e === 'otp_required' ? '请输入谷歌验证器里的 6 位数字。' : e === 'bad_otp' ? '验证器的数字不对或已过期，等它换下一组再试。' : e === 'expired' ? '登录已过期，请重新输入密码。' : e === 'locked' ? '输错次数太多，后台已暂时锁住，15 分钟后再试。' : e === 'not_configured' ? '还没设置管理密码。' : e === 'no_database' ? '数据库还没接上。' : e === 'network' ? '网络不通，稍后再试。' : '出错了，稍后再试。';
+    return e === 'forbidden' ? '密码不对。' : e === 'otp_required' ? '请输入谷歌验证器里的 6 位数字。' : e === 'bad_otp' ? '验证器的数字不对或已过期，等它换下一组再试。' : e === 'expired' ? '登录已过期，请重新输入密码。' : e === 'locked' ? '输错次数太多，后台已暂时锁住，15 分钟后再试。' : e === 'device_unknown' ? '这台设备的手势已失效，请用密码登录。' : e === 'not_configured' ? '还没设置管理密码。' : e === 'no_database' ? '数据库还没接上。' : e === 'network' ? '网络不通，稍后再试。' : '出错了，稍后再试。';
   }
   function when(ms) {
     if (!ms) return '';
@@ -366,41 +366,136 @@
     api('code-del', { code: v }).then(function (r) { if (!r.ok) return say(r.error === 'bad_request' ? '这不是一个解锁码（12 位字母和数字）。' : why(r.error)); say(v + ' 已作废。', true); $('cdel').value = ''; loadCodes(); });
   });
 
+  // ---------------------------------------------------------------- the swipe pattern
+  // nine dots; calls done('0-4-8-…') when the finger lifts. Dots are numbered 0..8, row by row.
+  function makePad(box, done) {
+    var NS = 'http://www.w3.org/2000/svg', size = 252, step = 84, seq = [], down = false, at = null, dots = [];
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+    var line = document.createElementNS(NS, 'polyline'); line.setAttribute('fill', 'none'); line.setAttribute('stroke-width', '6'); line.setAttribute('stroke-linecap', 'round'); line.setAttribute('stroke-linejoin', 'round'); line.setAttribute('stroke', '#00A66C');
+    svg.appendChild(line); box.innerHTML = ''; box.appendChild(svg);
+    function centre(n) { return [step / 2 + (n % 3) * step, step / 2 + Math.floor(n / 3) * step]; }
+    for (var n = 0; n < 9; n++) { var d = document.createElement('i'), c = centre(n); d.style.left = c[0] + 'px'; d.style.top = c[1] + 'px'; box.appendChild(d); dots.push(d); }
+    function draw() {
+      var pts = seq.map(function (k) { return centre(k).join(','); });
+      if (down && at && seq.length) pts.push(at.join(','));
+      line.setAttribute('points', pts.join(' '));
+      dots.forEach(function (d, k) { d.className = seq.indexOf(k) >= 0 ? 'on' : ''; });
+    }
+    function add(k) {
+      if (seq.indexOf(k) >= 0) return;
+      if (seq.length) {            // passing over the dot in the middle takes it too
+        var a = seq[seq.length - 1], ar = Math.floor(a / 3), ac = a % 3, br = Math.floor(k / 3), bc = k % 3;
+        if ((ar + br) % 2 === 0 && (ac + bc) % 2 === 0) { var mid = (ar + br) / 2 * 3 + (ac + bc) / 2; if (mid !== a && mid !== k && seq.indexOf(mid) < 0) seq.push(mid); }
+      }
+      seq.push(k);
+    }
+    function where(ev) { var r = box.getBoundingClientRect(); return [(ev.clientX - r.left) * size / r.width, (ev.clientY - r.top) * size / r.height]; }
+    function touch(ev) {
+      at = where(ev);
+      for (var k = 0; k < 9; k++) { var c = centre(k); if (Math.hypot(at[0] - c[0], at[1] - c[1]) < 30) add(k); }
+      draw();
+    }
+    box.addEventListener('pointerdown', function (ev) { ev.preventDefault(); box.classList.remove('bad'); seq = []; down = true; try { box.setPointerCapture(ev.pointerId); } catch (e) { /* not needed */ } touch(ev); });
+    box.addEventListener('pointermove', function (ev) { if (down) { ev.preventDefault(); touch(ev); } });
+    function up() { if (!down) return; down = false; draw(); if (seq.length) done(seq.join('-')); }
+    box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+    draw();
+    return { clear: function () { seq = []; box.classList.remove('bad'); draw(); }, wrong: function () { box.classList.add('bad'); setTimeout(function () { seq = []; box.classList.remove('bad'); draw(); }, 700); } };
+  }
+
   // ---------------------------------------------------------------- start
-  var STORE = 'civique.admin';
+  var STORE = 'civique.admin', DEV = 'civique.admin.dev';
+  function devGet() { try { var d = JSON.parse(localStorage.getItem(DEV) || 'null'); return d && d.device && d.secret ? d : null; } catch (e) { return null; } }
+  function devSet(d) { try { if (d) localStorage.setItem(DEV, JSON.stringify(d)); else localStorage.removeItem(DEV); } catch (e) { /* this browser keeps nothing */ } }
+  function gate(text, forcePw) {
+    var dev = devGet();
+    $('main').hidden = true; $('pat').hidden = !dev || !!forcePw; $('f').hidden = !!dev && !forcePw; say(text || '');
+    if (padIn) padIn.clear();
+  }
   function signOut(text) {
     TOKEN = ''; try { sessionStorage.removeItem(STORE); } catch (e) { /* nothing kept */ }
-    $('main').hidden = true; $('f').hidden = false; say(text || '');
+    gate(text);
   }
   function enter() {
     return loadUsers().then(function (d) {
       if (!d.ok) { if (!$('main').hidden || TOKEN) signOut(why(d.error)); else say(why(d.error)); return; }
-      say(''); $('main').hidden = false; $('f').hidden = true;
-      loadCodes(); loadRefs(); loadSales();
+      say(''); $('main').hidden = false; $('f').hidden = true; $('pat').hidden = true;
+      loadCodes(); loadRefs(); loadSales(); drawSafe();
       return loadBank();
     });
   }
-  $('f').addEventListener('submit', function (ev) {
-    ev.preventDefault();
+  function login(body) {
     say('读取中…', true);
-    fetch('/api/admin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: $('k').value, otp: $('otp').value, op: 'login' }) })
+    return fetch('/api/admin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({ op: 'login' }, body)) })
       .then(function (r) { return r.json().catch(function () { return { error: 'server' }; }); }, function () { return { error: 'network' }; })
       .then(function (d) {
-        if (!d.ok) { $('main').hidden = true; if (d.error === 'otp_required') $('otp').focus(); return say(why(d.error)); }
-        TOKEN = d.token; try { sessionStorage.setItem(STORE, TOKEN); } catch (e) { /* asked again after a reload */ }
-        $('k').value = ''; $('otp').value = '';
-        return enter();
+        if (d.ok) { TOKEN = d.token; try { sessionStorage.setItem(STORE, TOKEN); } catch (e) { /* asked again after a reload */ } $('k').value = ''; $('otp').value = ''; }
+        return d;
       });
+  }
+  var padIn = makePad($('pad-in'), function (pattern) {
+    var dev = devGet();
+    if (!dev) return gate('', true);
+    login({ device: dev.device, secret: dev.secret, pattern: pattern }).then(function (d) {
+      if (d.ok) return enter();
+      if (d.error === 'bad_pattern') { padIn.wrong(); return say('手势不对，还能试 ' + (d.left || 0) + ' 次。'); }
+      if (d.error === 'device_forgotten' || d.error === 'device_expired' || d.error === 'device_unknown') {
+        devSet(null);
+        return gate(d.error === 'device_expired' ? '手势已满 30 天，请用密码和验证码登录一次，再重新设置手势。' : d.error === 'device_forgotten' ? '手势连错 5 次，这台设备已被忘掉。请用密码和验证码登录。' : '这台设备的手势已失效，请用密码和验证码登录。', true);
+      }
+      padIn.wrong(); say(why(d.error));
+    });
   });
+  $('usepw').addEventListener('click', function () { gate('', true); });
+  $('f').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    login({ key: $('k').value, otp: $('otp').value }).then(function (d) {
+      if (!d.ok) { $('main').hidden = true; if (d.error === 'otp_required') $('otp').focus(); return say(why(d.error)); }
+      return enter().then(function () { if (!devGet() && !$('main').hidden) say('登录成功。想以后不用输密码：点上面的“安全”，给这台设备设一个手势。', true); });
+    });
+  });
+
+  // the "safety" tab: this device's pattern, the remembered devices
+  var first = '', padSet = makePad($('pad-set'), function (pattern) {
+    if (pattern.split('-').length < 4) { padSet.wrong(); $('setpat-say').textContent = '至少连 4 个点，再画一次。'; return; }
+    if (!first) { first = pattern; padSet.clear(); $('setpat-say').textContent = '再画一次确认。'; return; }
+    if (pattern !== first) { first = ''; padSet.wrong(); $('setpat-say').textContent = '两次不一样。重新画一个手势。'; return; }
+    api('device-add', { pattern: pattern }).then(function (d) {
+      first = ''; $('setpat').hidden = true;
+      if (!d.ok) return say(d.error === 'full_login_needed' ? '设置手势要在用密码登录后的 15 分钟内做。请点“退出登录”，用密码和验证码重新登录后再设。' : why(d.error));
+      devSet({ device: d.device, secret: d.secret });
+      say('手势设好了。以后在这台设备上滑手势就能进。', true); drawSafe();
+    });
+  });
+  function drawSafe() {
+    var dev = devGet();
+    $('patstate').textContent = dev ? '这台设备已经设了手势。' : '这台设备还没有设手势，每次都要输密码和验证码。';
+    $('setpat-go').textContent = dev ? '重设手势' : '设置手势'; $('patdrop').hidden = !dev;
+    api('devices').then(function (d) {
+      $('devlist').innerHTML = '';
+      if (!d.ok) return;
+      d.devices.forEach(function (x) {
+        var tr = el('tr'), name = td('', 'wrap'); name.textContent = (dev && dev.device === x.id ? '（这台）' : '') + (/iPhone/.test(x.label) ? 'iPhone' : /Android/.test(x.label) ? '安卓手机' : /Macintosh/.test(x.label) ? 'Mac 电脑' : /Windows/.test(x.label) ? 'Windows 电脑' : '设备') + (/MicroMessenger/.test(x.label) ? ' · 微信' : '');
+        tr.appendChild(name); tr.appendChild(td(full(x.created))); tr.appendChild(td(when(x.last)));
+        var ops = td(''), b = el('button', { type: 'button', cls: 'danger', text: '移除' }); b.style.padding = '3px 9px';
+        b.addEventListener('click', function () { api('device-del', { id: x.id }).then(function (r) { if (!r.ok) return say(why(r.error)); if (dev && dev.device === x.id) devSet(null); say('已移除。', true); drawSafe(); }); });
+        ops.appendChild(b); tr.appendChild(ops); $('devlist').appendChild(tr);
+      });
+      if (!d.devices.length) { var tr = el('tr'), c = td('还没有记住任何设备'); c.colSpan = 4; tr.appendChild(c); $('devlist').appendChild(tr); }
+    });
+  }
+  $('setpat-go').addEventListener('click', function () { first = ''; padSet.clear(); $('setpat').hidden = false; $('setpat-say').textContent = '画一个手势，至少连 4 个点。'; });
+  $('setpat-cancel').addEventListener('click', function () { first = ''; $('setpat').hidden = true; });
+  $('patdrop').addEventListener('click', function () { var dev = devGet(); if (!dev) return; api('device-del', { id: dev.device }).then(function () { devSet(null); say('这台设备不再用手势。', true); drawSafe(); }); });
+  $('logout').addEventListener('click', function () { signOut('已退出。'); });
+  function showTab(name) {
+    Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (x) { x.setAttribute('aria-selected', x.getAttribute('data-tab') === name ? 'true' : 'false'); });
+    ['users', 'refs', 'bank', 'codes', 'safe'].forEach(function (t) { $('t-' + t).hidden = t !== name; });
+  }
   try { TOKEN = sessionStorage.getItem(STORE) || ''; } catch (e) { TOKEN = ''; }
-  if (TOKEN) enter();
+  if (TOKEN) enter(); else gate('');
   $('uq').addEventListener('input', drawUsers); $('uf').addEventListener('change', drawUsers);
   $('reload').addEventListener('click', function () { loadUsers(); });
   $('bq').addEventListener('input', drawBank); $('bonly').addEventListener('change', drawBank);
-  Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) {
-    b.addEventListener('click', function () {
-      Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
-      ['users', 'refs', 'bank', 'codes'].forEach(function (t) { $('t-' + t).hidden = t !== b.getAttribute('data-tab'); });
-    });
-  });
+  Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.addEventListener('click', function () { showTab(b.getAttribute('data-tab')); }); });
 })();

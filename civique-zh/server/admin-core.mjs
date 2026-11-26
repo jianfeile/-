@@ -7,7 +7,7 @@
 // Settings: DB (D1 binding), CONTENT_KEY (corrections to paid questions are encrypted with it), ADMIN_KEY.
 import { codeIsValid, normCode, makeCode, fmtCode } from './unlock-core.mjs';
 import { ensure, clip, refOk, parisDay, deviceLimit } from './store.mjs';
-import { authorize, statusOf } from './auth.mjs';
+import { authorize, statusOf, addDevice } from './auth.mjs';
 
 const enc = new TextEncoder();
 const json = (obj, status = 200, extra) => new Response(JSON.stringify(obj), {
@@ -122,7 +122,7 @@ export async function admin(request, env) {
   if (request.method !== 'POST') return json({ error: 'method' }, 405);
   const body = await readBody(request);
   const auth = await authorize(body, env);
-  if (!auth.ok) return json({ error: auth.error }, statusOf(auth.error));
+  if (!auth.ok) return json(Object.assign({ error: auth.error }, auth.left ? { left: auth.left } : {}), statusOf(auth.error));
   const op = body.op;
   if (op === 'login') return json({ ok: true, token: auth.token || body.token, exp: auth.exp || 0 });
   const d = await ensure(env);
@@ -141,6 +141,19 @@ export async function admin(request, env) {
   if (op === 'user-del') {          // someone asked for their record to be erased
     const id = String(body.id || '');
     await d.batch([d.prepare('DELETE FROM days WHERE user = ?1').bind(id), d.prepare('DELETE FROM users WHERE id = ?1').bind(id)]);
+    return json({ ok: true });
+  }
+  if (op === 'device-add') {       // only within a quarter of an hour of a sign-in with the password: a pattern cannot be used to add devices
+    if (auth.kind !== 'f' || Date.now() - auth.issued > 15 * 60000) return json({ error: 'full_login_needed' }, 403);
+    const r = await addDevice(env, body.pattern, request.headers.get('user-agent') || '');
+    return json(r, r.ok ? 200 : 400);
+  }
+  if (op === 'devices') {
+    const rows = (await d.prepare('SELECT id, label, created, last FROM devices ORDER BY last DESC').all()).results || [];
+    return json({ ok: true, devices: rows });
+  }
+  if (op === 'device-del') {
+    await d.prepare('DELETE FROM devices WHERE id = ?1').bind(String(body.id || '')).run();
     return json({ ok: true });
   }
   if (op === 'refs') {

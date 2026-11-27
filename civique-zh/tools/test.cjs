@@ -101,7 +101,7 @@ function serve() {
         });
         return;
       }
-      if (p === '/') p = '/index.html';
+      if (p.endsWith('/')) p += 'index.html';
       const f = path.join(SITE, p);
       if (!f.startsWith(SITE) || !fs.existsSync(f)) { res.writeHead(404); res.end('not found'); return; }
       res.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream' });
@@ -1151,7 +1151,7 @@ if (CODE) {
     await ctx.close();
 
     ({ ctx, page } = await fresh({ viewport: { width: 390, height: 780 } }));
-    await page.goto(base + 'admin.html');
+    await page.goto(base + 'admin-old.html');
     await page.fill('#k', 'wrong-wrong-wrong-wrong');
     await page.locator('#f button').click();
     await page.waitForFunction(() => document.getElementById('msg').textContent === '密码不对。');
@@ -1297,7 +1297,7 @@ if (CODE) {
     }
 
     ({ ctx, page } = await fresh());
-    await page.goto(base + 'admin.html');
+    await page.goto(base + 'admin-old.html');
     await page.fill('#k', ENV.ADMIN_KEY);
     await page.locator('#f button').click();
     await page.waitForSelector('#main:not([hidden])');
@@ -1367,7 +1367,7 @@ if (CODE) {
     await adm('code-reset', { code: paid });
 
     ({ ctx, page } = await fresh());
-    await page.goto(base + 'admin.html');
+    await page.goto(base + 'admin-old.html');
     await page.fill('#k', ENV.ADMIN_KEY);
     await page.locator('#f button').click();
     await page.waitForSelector('#main:not([hidden])');
@@ -1428,7 +1428,7 @@ if (CODE) {
 
     // in the browser, with a finger
     ({ ctx, page } = await fresh({ hasTouch: true }));
-    await page.goto(base + 'admin.html');
+    await page.goto(base + 'admin-old.html');
     check('admin: without a remembered device the password form is shown, not the pad', await page.locator('#f').isVisible() && !(await page.locator('#pat').isVisible()));
     await page.fill('#k', ENV.ADMIN_KEY);
     await page.locator('#f button').click();
@@ -1469,6 +1469,75 @@ if (CODE) {
     await page.locator('#usepw').click();
     check('admin: signing out goes back to the pad, and the password form is still one tap away', await page.locator('#f').isVisible() && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await ctx.close();
+  }
+
+  // ---- the admin page (admin-src/, built to site/admin/)
+  console.log('admin page');
+  {
+    const call = async (body) => adminCore.admin(new Request('http://x/api/admin', { method: 'POST', headers: { 'user-agent': 'TestPhone' }, body: JSON.stringify(body) }), ENV, CF);
+    const full = await (await call({ key: ENV.ADMIN_KEY, op: 'login' })).json();
+    const oldDev = await (await call({ token: full.token, op: 'device-add', pattern: '0-1-2-5-8-7-6' })).json();   // as the earlier admin page recorded a 0 → 2 → 8 → 6 swipe
+    ({ ctx, page } = await fresh({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } }));
+    const external = []; page.on('request', (r) => { if (!r.url().startsWith(base)) external.push(r.url()); });
+    await page.goto(base + 'admin/');
+    await page.waitForSelector('input[placeholder="输入管理密码"]');
+    check('admin: the page names no outside site, opens on the password form, and is not in demo mode', !/https?:\/\/(?!www\.w3\.org|kaocivique\.com|react\.dev|redux)/.test(fs.readFileSync(path.join(SITE, 'admin', 'index.html'), 'utf8')) && !/演示数据模式/.test(await page.locator('body').innerText()));
+    await page.fill('input[placeholder="输入管理密码"]', 'wrong-wrong-wrong');
+    await page.locator('button[type=submit]').first().click();
+    await page.waitForFunction(() => /密码不对/.test(document.body.innerText));
+    await page.fill('input[placeholder="输入管理密码"]', ENV.ADMIN_KEY);
+    await page.locator('button[type=submit]').first().click();
+    await page.locator('nav button:visible').first().waitFor();
+    await page.waitForFunction(() => /经营概况/.test(document.body.innerText) && /€\d/.test(document.body.innerText));
+    const nav = async (t) => { await page.locator('nav button:visible', { hasText: t }).first().click(); await page.waitForTimeout(500); };
+    check('admin: signed in with the password, the overview shows money, people and the funnel', /转化漏斗|漏斗/.test(await page.locator('body').innerText()) && /新来人数/.test(await page.locator('body').innerText()));
+    const wide = [];
+    for (const t of ['用户', '推广', '解锁码', '题库', '概览']) { await nav(t); if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) wide.push(t); }
+    check('admin: every tab fits a phone', wide.length === 0, wide.join());
+    await nav('题库');
+    await page.waitForSelector('input[placeholder="搜题号（如 P009）或中法文题干关键词"]');
+    await page.waitForFunction(() => /共 617|617 题|617/.test(document.body.innerText), null, { timeout: 15000 });
+    const qid = free.qs[2].id;
+    await page.fill('input[placeholder="搜题号（如 P009）或中法文题干关键词"]', qid);
+    await page.locator('text=' + qid).first().click();
+    await page.waitForSelector('[role=dialog]');
+    const box = await page.locator('[role=dialog]').first().boundingBox();
+    check('admin: the question editor takes the whole screen (no overlay trapped in the page)', box.y === 0 && box.height >= 840, JSON.stringify(box));
+    const ta = page.locator('[role=dialog] textarea');
+    const last = ta.nth((await ta.count()) - 1);
+    await last.fill((await last.inputValue()) + '（后台测试）');
+    await page.locator('[role=dialog] button[type=submit]').click();
+    await page.waitForFunction(() => !document.querySelector('[role=dialog]'));
+    const pt = (await (await call({ token: full.token, op: 'patches' })).json()).patches.find((x) => x.qid === qid);
+    check('admin: an edited explanation is saved alone, as a free question', !!pt && pt.free === true && Object.keys(pt.data).join() === 'e' && pt.data.e.endsWith('（后台测试）'), JSON.stringify(pt));
+    await call({ token: full.token, op: 'patch-del', qid });
+    await nav('推广');
+    await page.locator('button:visible', { hasText: '新增推荐人' }).first().click();
+    await page.fill('input[placeholder="例如：小丽（朋友圈）"]', '后台测试人');
+    await page.locator('button[type=submit]:visible').first().click();
+    await page.waitForFunction(() => /后台测试人/.test(document.body.innerText) && /\?r=[a-z2-9]{5}/.test(document.body.innerText));
+    const made = (await (await call({ token: full.token, op: 'refs' })).json()).refs.find((r) => r.name === '后台测试人');
+    check('admin: a new referrer gets a short code and 30 % by default', !!made && /^[a-z2-9]{5}$/.test(made.code) && made.pct === 30, JSON.stringify(made));
+    await page.locator('button:visible', { hasText: '生成海报与二维码' }).first().click();
+    await page.waitForFunction(() => [...document.querySelectorAll('img')].some((i) => /^(data:image\/png|blob:)/.test(i.src) && i.naturalWidth >= 1000));
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('button:visible', { hasText: '下载 PNG' }).first().click()]);
+    check('admin: the referrer\'s poster is the real one (1080 wide) and downloads under its code', dl.suggestedFilename() === 'kaocivique-' + made.code + '-poster.png', dl.suggestedFilename());
+    await call({ token: full.token, op: 'ref-del', code: made.code });
+    // a device whose pattern was set on the earlier admin page still gets in
+    await page.evaluate((d) => { sessionStorage.clear(); localStorage.setItem('civique.admin.dev', JSON.stringify(d)); }, { device: oldDev.device, secret: oldDev.secret });
+    await page.reload();
+    const grid = page.locator('[aria-label="九宫格手势输入区域"]');
+    await grid.waitFor();
+    const bx = await grid.boundingBox();
+    const at = (n) => [bx.x + bx.width / 6 + (n % 3) * bx.width / 3, bx.y + bx.height / 6 + Math.floor(n / 3) * bx.height / 3];
+    await page.mouse.move(...at(0)); await page.mouse.down();
+    for (const n of [2, 8, 6]) await page.mouse.move(...at(n), { steps: 8 });
+    await page.mouse.up();
+    await page.locator('nav button:visible').first().waitFor({ timeout: 10000 });
+    check('admin: a pattern set on the earlier admin page opens the new one, with no password typed', await page.locator('nav button:visible').count() > 0);
+    check('admin: nothing is loaded from another site', external.length === 0, external.join());
+    await ctx.close();
+    await call({ token: full.token, op: 'device-del', id: oldDev.device });
   }
 
   // ---- signing in with a phone number or an email

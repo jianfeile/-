@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const SITE = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'site');
 const check = process.argv.includes('--check');
 let stale = 0;
-for (const page of ['index.html', 'admin.html', 'sales.html']) {
+for (const page of ['index.html', 'admin-old.html', 'sales.html']) {
   const before = readFileSync(join(SITE, page), 'utf8');
   const after = before.replace(/\b(src|href)="([\w./-]+\.(?:js|css))(?:\?v=[0-9a-f]+)?"/g, (m, attr, file) =>
     attr + '="' + file + '?v=' + createHash('sha256').update(readFileSync(join(SITE, file))).digest('hex').slice(0, 10) + '"');

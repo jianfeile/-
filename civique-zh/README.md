@@ -59,6 +59,12 @@ cd site && python3 -m http.server 8080      # 打开 http://localhost:8080
 
 改了 `site/` 里的脚本或样式后，先运行 `node tools/stamp.mjs`：它把每个文件的指纹写进页面（`app.js?v=…`），手机就不会继续用缓存里的旧文件。测试会检查指纹是否最新。
 
+### 管理后台的界面
+
+- 源码在 `admin-src/`（React + Vite + Tailwind，初稿由 AI Studio 生成），构建结果提交在 `site/admin/`，网址 `/admin/`。改了源码后：`cd admin-src && npm install && npm run build`，再提交 `site/admin/`。
+- 地址后加 `?demo=1` 用内置的演示数据，不连接口。
+- 接口说明见 `server/admin-core.mjs`、`server/auth.mjs`、`server/sales-core.mjs`。旧版界面暂时保留在 `/admin-old.html`。
+
 ### 管理后台、使用记录、题库更正
 
 - 需要一个 Cloudflare D1 数据库，在 `wrangler.toml` 里绑定为 `DB`。没有绑定时网站照常工作，只是不记录。表在第一次使用时自动建立（`server/store.mjs`）。

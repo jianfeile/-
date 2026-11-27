@@ -44,7 +44,8 @@ export const ExamStatsCard: React.FC<{ users: User[] }> = ({ users }) => {
       const list = dated.filter((u) => b.test(daysUntil(u.exam_date, today)));
       return { ...b, n: list.length, unpaid: list.filter((u) => !isUserPaid(u)).length };
     });
-    return { rows, chosen: chosen.length, none: users.length - chosen.length, dated: dated.length, buckets };
+    const undecided = users.filter((u) => !/^\d{4}-\d\d-\d\d$/.test(u.exam_date || '') && (u.sum as { nodate?: number } | null)?.nodate).length;
+    return { rows, chosen: chosen.length, none: users.length - chosen.length, dated: dated.length, undecided, buckets };
   }, [users]);
 
   const max = Math.max(...stats.rows.map((r) => r.n));
@@ -92,7 +93,7 @@ export const ExamStatsCard: React.FC<{ users: User[] }> = ({ users }) => {
       </div>
 
       <h4 className="mt-5 mb-2 text-[13px] font-semibold text-[#101815] dark:text-[#EDF3F0]">
-        什么时候考 <span className="font-normal text-xs text-[#5C6B64] dark:text-[#93A69D]">（填了考试日期的 {stats.dated} 人）</span>
+        什么时候考 <span className="font-normal text-xs text-[#5C6B64] dark:text-[#93A69D]">（填了日期的 {stats.dated} 人，说还没定的 {stats.undecided} 人）</span>
       </h4>
       <div className="grid grid-cols-2 gap-2">
         {stats.buckets.map((b) => (

@@ -28,7 +28,7 @@ const num = (v, max) => (Number.isFinite(v) && v >= 0 ? Math.min(Math.floor(v), 
 // ---------------------------------------------------------------- /api/sync
 function tidySum(x) {
   x = x && typeof x === 'object' ? x : {};
-  return { demo: num(x.demo, 1), seen: num(x.seen, 9999), ok: num(x.ok, 9999), miss: num(x.miss, 9999), ans: num(x.ans, 999999), pool: num(x.pool, 9999), exams: num(x.exams, 99), best: num(x.best, 99), bestN: num(x.bestN, 99) };
+  return { demo: num(x.demo, 1), nodate: num(x.nodate, 1), seen: num(x.seen, 9999), ok: num(x.ok, 9999), miss: num(x.miss, 9999), ans: num(x.ans, 999999), pool: num(x.pool, 9999), exams: num(x.exams, 99), best: num(x.best, 99), bestN: num(x.bestN, 99) };
 }
 function tidyState(x) {
   x = x && typeof x === 'object' ? x : {};

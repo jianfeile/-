@@ -140,7 +140,7 @@ if (CODE) {
     // the tests describe a site with no payment link and no contact yet; the ones about those set their own
     await ctx.addInitScript((extra) => {
       let cfg;
-      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '', login: false }, extra); } });
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '', login: false, askDate: false }, extra); } });
     }, (opts && opts.cfg) || {});
     const page = await ctx.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.g|ERR_|Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -979,7 +979,7 @@ if (CODE) {
     // no contact in the settings: the question number in a sheet, with a copy button
     await page.addInitScript(() => {
       let cfg;
-      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '', login: false }); } });
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: '', payUrl: '', login: false, askDate: false }); } });
     });
     await page.goto(base + '#home');
     await page.reload();
@@ -1001,7 +1001,7 @@ if (CODE) {
     ({ ctx, page } = await fresh());
     await page.addInitScript(() => {
       let cfg;
-      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: 'aide@example.com', payUrl: 'https://pay.example.com/x', login: false }); } });
+      Object.defineProperty(window, 'CIVIQUE_CONFIG', { configurable: true, get: () => cfg, set: (v) => { cfg = Object.assign(v, { contact: 'aide@example.com', payUrl: 'https://pay.example.com/x', login: false, askDate: false }); } });
     });
     await page.goto(base);
     await page.locator('[data-a="target"][data-v="csp"]').click();
@@ -1394,6 +1394,38 @@ if (CODE) {
     check('home screen: inside WeChat on an iPhone, the steps start with leaving WeChat, then Safari\'s share button', steps.length === 4 && /你现在在微信里/.test(steps[0]) && /苹果手机/.test(steps[1]) && /添加到主屏幕/.test(steps[1]) && /重新登录/.test(steps[3]) && await noOverflow(page), steps.join(' | '));
     await page.locator('.sheet [data-a="close"]').click();
     check('home screen: the sheet closes', await page.locator('.sheet').count() === 0);
+    await ctx.close();
+  }
+
+  // ---- the exam date, asked once after the first choice of exam type
+  console.log('exam date question');
+  {
+    ({ ctx, page } = await fresh({ cfg: { askDate: true } }));
+    await page.goto(base);
+    await page.locator('[data-a="target"][data-v="cr"]').click();
+    await page.waitForSelector('.sheet #examdate');
+    check('exam date: asked right after the first choice of exam type, with a way to say "not decided" and to skip', /你什么时候考/.test(await page.locator('.sheet h2').innerText()) && await page.locator('.sheet [data-a="date-none"]').count() === 1 && await page.locator('.sheet [data-a="close"]').count() === 1 && await noOverflow(page));
+    const day = await dayIso(40);
+    await page.fill('#examdate', day);
+    await page.locator('#planform button[type=submit]').click();
+    await page.waitForFunction(() => !document.querySelector('.sheet'));
+    check('exam date: saved, the home screen counts down to it', (await state(page)).examDate === day && /还有\s*40\s*天/.test(await page.locator('.count').innerText()));
+    await page.goto(base + '#me');
+    await page.locator('[data-a="target"][data-v="csp"]').click();
+    await page.waitForTimeout(300);
+    check('exam date: not asked again when the exam type changes', await page.locator('.sheet').count() === 0);
+    await ctx.close();
+    ({ ctx, page } = await fresh({ cfg: { askDate: true } }));
+    await page.goto(base + '#check');
+    for (const t of ['申请入籍', '申请入籍，或恢复']) await page.locator('.chk-opt', { hasText: t }).click();
+    await page.locator('[data-a="chk-go"]').click();
+    await page.waitForSelector('.sheet #examdate');
+    await page.locator('.sheet [data-a="date-none"]').click();
+    await page.waitForFunction(() => !document.querySelector('.sheet'));
+    const st = await state(page);
+    check('exam date: also asked after the self-check; "not decided" is remembered and not asked again', st.marks.nodate === 1 && st.marks.dateAsked === 1 && !st.examDate);
+    await page.reload(); await page.waitForSelector('.hero.home');
+    check('exam date: a reload does not ask again', await page.locator('.sheet').count() === 0);
     await ctx.close();
   }
 

@@ -204,6 +204,22 @@
       actions: acts
     };
   }
+  // asked once, right after the first choice of exam type: the countdown and the daily goal need it, and the seller
+  // learns when people sit the exam. 'nodate' remembers "not decided yet", so it is not asked again.
+  function askDate() {
+    if (CFG.askDate === false || S.examDate || S.marks.dateAsked) return false;
+    S.marks.dateAsked = 1; save();
+    ui.planMsg = '';
+    ui.modal = {
+      title: '你什么时候考？',
+      body: '<p class="small">填了考试日期，首页会显示倒计时，并按剩下的天数安排每天做多少题。以后在首页右上角随时可以改。</p>' +
+        '<form id="planform" class="stack"><div class="field"><input type="date" id="examdate" name="examdate" aria-label="正式考试的日期" min="' + today() + '">' +
+        '<button class="btn" type="submit">保存</button></div>' +
+        '<p class="msg bad plan-msg" role="alert"></p></form>',
+      actions: [{ label: '还没定 / 还没报名', a: 'date-none', cls: 'ghost' }, { label: '先跳过', a: 'close', cls: 'quiet' }]
+    };
+    return true;
+  }
   function countChip() {
     var left = daysLeft(), txt;
     if (left === null) txt = icon('date') + '设日期';
@@ -343,7 +359,7 @@
     S.exams.forEach(function (e) { if (!e.mini && e.score >= best) { best = e.score; bestN = e.n; } });
     var body = JSON.stringify({
       device: deviceId(), login: (S.user && S.user.id) || '', code: (S.unlock && S.unlock.code) || '', unlocked: unlocked(), ref: lsGet(REF_KEY) || '', level: S.target, examDate: S.examDate || '',
-      sum: { demo: S.marks.demo ? 1 : 0, seen: seen, ok: ok, miss: miss, ans: ans, pool: S.target ? pool().length : 0, exams: S.exams.length, best: best, bestN: bestN },
+      sum: { demo: S.marks.demo ? 1 : 0, nodate: S.marks.nodate && !S.examDate ? 1 : 0, seen: seen, ok: ok, miss: miss, ans: ans, pool: S.target ? pool().length : 0, exams: S.exams.length, best: best, bestN: bestN },
       state: { stats: S.stats, days: S.days || {}, exams: S.exams.map(function (e) { return { ts: e.ts, target: e.target, mini: e.mini, score: e.score, n: e.n, passAt: e.passAt, secs: e.secs }; }) }
     });
     if (body === syncSent) return;
@@ -2207,6 +2223,7 @@
     keepRef();
     syncNow(false);
     if (needLogin()) { app.innerHTML = vLogin(); syncDock(); if (top) window.scrollTo(0, 0); return; }
+    if (ui.askDateNext && r === 'home') { ui.askDateNext = false; askDate(); }      // after the self-check led to the home screen
     app.innerHTML = VIEWS[r]() + modal();
     syncDock();
     if (top) window.scrollTo(0, 0);
@@ -2243,7 +2260,8 @@
 
   // ---------------------------------------------------------------- actions
   var ACT = {
-    target: function (v) { if (!LEVELS[v]) return; var first = !S.target; if (S.target !== v) { S.target = v; S.sess = null; } save(); render(first); syncNow(true); },   // first choice: the welcome screen was scrolled, the home screen starts at the top
+    target: function (v) { if (!LEVELS[v]) return; var first = !S.target; if (S.target !== v) { S.target = v; S.sess = null; } save(); if (first) askDate(); render(first); syncNow(true); },
+    'date-none': function () { S.marks.nodate = 1; ui.modal = null; save(); render(); syncNow(true); },   // first choice: the welcome screen was scrolled, the home screen starts at the top
     goto: function (v) { ui.modal = null; go(v); },
     close: function () { ui.modal = null; render(); },
     // how to put the site on the phone's home screen; the steps depend on the phone and on being inside WeChat or not
@@ -2400,7 +2418,7 @@
     },
     'chk-pick': function (v) { var w = chkWalk(); if (!w.node || !w.node.o[Number(v)]) return; ui.chk = (ui.chk || []).slice(0, w.said.length).concat(Number(v)); render(true); },
     'chk-back': function (v) { ui.chk = (ui.chk || []).slice(0, Number(v)); render(true); },
-    'chk-go': function (v) { if (!LEVELS[v]) return; if (S.target !== v) { S.target = v; S.sess = null; } save(); go('home'); },
+    'chk-go': function (v) { if (!LEVELS[v]) return; var first = !S.target; if (S.target !== v) { S.target = v; S.sess = null; } save(); if (first) ui.askDateNext = true; go('home'); },
     guest: function () { S.guest = 1; ui.loginAsk = false; save(); render(true); },
     logout: function () { S.user = null; S.guest = 0; ui.loginVal = ''; ui.loginMsg = ''; save(); render(true); },
     'login-open': function () { S.guest = 0; ui.loginAsk = true; save(); render(true); },
@@ -2482,7 +2500,7 @@
     var v = (document.getElementById('examdate') || {}).value || '';
     if (!/^\d{4}-\d\d-\d\d$/.test(v)) ui.planMsg = '请先选一个日期。';
     else if (v < today()) ui.planMsg = '这一天已经过了，请选今天或之后的日期。';
-    else { S.examDate = v; ui.modal = null; ui.planMsg = ''; planTidy(); save(); render(); return; }
+    else { S.examDate = v; delete S.marks.nodate; ui.modal = null; ui.planMsg = ''; planTidy(); save(); render(); syncNow(true); return; }
     planSheet(); render();
     var box = document.getElementById('examdate'); if (box) box.value = v;
   });

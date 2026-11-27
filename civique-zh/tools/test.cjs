@@ -1491,6 +1491,12 @@ if (CODE) {
     await page.waitForFunction(() => /经营概况/.test(document.body.innerText) && /€\d/.test(document.body.innerText));
     const nav = async (t) => { await page.locator('nav button:visible', { hasText: t }).first().click(); await page.waitForTimeout(500); };
     check('admin: signed in with the password, the overview shows money, people and the funnel', /转化漏斗|漏斗/.test(await page.locator('body').innerText()) && /新来人数/.test(await page.locator('body').innerText()));
+    {
+      const users = (await (await call({ token: full.token, op: 'users' })).json()).users;
+      const per = ['csp', 'cr', 'nat'].map((lv) => users.filter((u) => u.level === lv).length);
+      const card = (await page.locator('[aria-label="大家在准备考什么"]').innerText()).replace(/\s+/g, ' ');
+      check('overview: how many prepare each exam type, as the users list says', card.includes('选了类型 ' + per.reduce((a, b) => a + b, 0) + ' 人') && card.includes('多年居留卡 ' + per[0] + ' 人') && card.includes('十年居留卡 ' + per[1] + ' 人') && card.includes('入籍 ' + per[2] + ' 人') && /什么时候考/.test(card), card.slice(0, 200));
+    }
     const wide = [];
     for (const t of ['用户', '推广', '解锁码', '题库', '概览']) { await nav(t); if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) wide.push(t); }
     check('admin: every tab fits a phone', wide.length === 0, wide.join());

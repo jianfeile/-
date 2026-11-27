@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 import { RefItem, SaleItem, User } from '../types';
+import { ExamStatsCard } from '../components/ExamStatsCard';
 import {
   formatEur,
   formatParisDate,
@@ -381,6 +382,8 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
           </div>
         )}
       </section>
+
+      <ExamStatsCard users={users} />
 
       {/* Funnel + 14-day Trend */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
